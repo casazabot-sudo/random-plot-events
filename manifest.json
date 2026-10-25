@@ -1,14 +1,16 @@
 {
-  "display_name": "Random Plot Events (Fixed)",
+  "display_name": "Random Plot Events",
   "loading_order": 100,
   "requires": [],
   "optional": [],
   "js": "index.js",
   "css": "style.css",
   "author": "casazabot",
-  "version": "2.0.2",
+  "version": "2.0.3",
   "homePage": "https://github.com/casazabot-sudo/random-plot-events",
   "auto_update": false,
   "generate_interceptor": "randomPlotEventsInterceptor",
-  "hooks": { "activate": "init" }
+  "hooks": {
+    "activate": "init"
+  }
 }

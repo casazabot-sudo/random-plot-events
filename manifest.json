@@ -1,10 +1,9 @@
 {
-"display_name": "Random Plot Event",
-"name": "random_plot_events",
-"version": "1.0.0",
-"homePage": "https://github.com/casazabot-sudo/random-plot-events",
-"author": "casazabot",
-"description": "Генерирует случайные сюжетные события по 10 категориям с настраиваемой интенсивностью, защитой от повторов и сохранением контекста.",
-"js": "index.js",
-"css": "style.css"
+  "display_name": "Random Plot Event",
+  "name": "random_plot_events",
+  "version": "1.0.1",
+  "author": "AI Collaborator",
+  "description": "Генерирует случайные сюжетные события по категориям с настраиваемой интенсивностью.",
+  "js": "index.js",
+  "css": "style.css"
 }

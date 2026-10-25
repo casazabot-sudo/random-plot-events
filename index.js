@@ -23,30 +23,31 @@ const DEFAULTS = {
     forceNext: false,
     recentCategories: [],
     lastEventInfo: 'No events yet',
+    activeEvent: null,
+    activeEventTurns: 0,
     _lastCountedUserMessages: 0
 };
 
 const CATEGORIES = {
-    mystery: ['Mystery', 'Introduce a mystery, unexplained clue, secret, or contradiction. Do not reveal the answer immediately.'],
-    complication: ['Complication', 'Introduce a plausible complication that changes the situation and requires adaptation or a difficult choice.'],
-    encounter: ['Encounter', 'Introduce a new character or an unexpected reunion with an established character, with a clear reason for their appearance.'],
-    danger: ['Danger', 'Introduce a relevant threat, trap, or source of tension. Do not make the outcome inevitable.'],
-    social: ['Social Conflict', 'Introduce social tension, a misunderstanding, rivalry, negotiation, or clash of interests.'],
-    clue: ['Clue', 'Reveal a small but meaningful clue connected to an existing plot thread.'],
-    opportunity: ['Opportunity', 'Present a useful opportunity, invitation, resource, bargain, or unexpected advantage.'],
-    environment: ['Environment', 'Change the surroundings: weather, location details, nearby activity, or a technical failure.'],
-    consequence: ['Consequence', 'Show a plausible consequence of an earlier action, promise, choice, or unresolved conflict.'],
-    romance: ['Relationship', 'Introduce a subtle emotional moment that fits the established relationship. Do not impose feelings or consent on the user’s character.']
+    mystery: ['Mystery', `Introduce a concrete, observable mystery connected to the current scene. Use a meaningful clue, contradiction, suspicious object, concealed identity, unexplained event, or evidence that something is wrong. The clue must matter enough to invite investigation or a decision. Do not dismiss it as coincidence, explain it away, or solve it immediately. Establish at least one plausible question and leave the answer unknown. In later responses, develop the same mystery through new evidence, reactions, complications, or discoveries. Avoid repeating the same clue without adding information.`],
+    complication: ['Complication', `Introduce a plausible complication that disrupts the current plan, creates a real obstacle, or makes an existing situation more difficult. It must have a concrete effect and require adaptation, a trade-off, negotiation, or a difficult choice. Do not resolve it immediately or make it disappear without cause. Let consequences follow logically from the characters' actions.`],
+    encounter: ['Encounter', `Introduce a new character or bring back an established character for a specific, believable reason. Connect the encounter to the location, current events, a character's past, or an unresolved plot thread. The character should have a motive, information, request, conflict, or action that can influence the scene. Do not make them appear merely to exchange a greeting and leave. Let the encounter develop through dialogue and consequences in subsequent responses.`],
+    danger: ['Danger', `Introduce a concrete and relevant threat that changes the immediate situation. Examples include a credible warning, dangerous malfunction, suspicious person, blocked escape route, physical hazard, attempted theft, or evidence of an imminent threat. Show observable signs and make the stakes understandable. Do not rely only on ominous atmosphere, vague feelings, or a harmless flicker of light. Do not force injury, defeat, or an unavoidable outcome. Give characters a meaningful opportunity to notice, respond, investigate, escape, or choose. If unresolved, carry the danger forward and let it change in response to the characters' actions.`],
+    social: ['Social Conflict', `Create meaningful social tension involving conflicting interests, misunderstanding, rivalry, accusation, negotiation, public pressure, a secret, or a breach of etiquette. Make it visible through words, behavior, reactions, or a consequential decision. Give the characters understandable motives rather than making them hostile without reason. Do not settle the disagreement in the same response. Leave room for dialogue, negotiation, reconciliation, or escalation.`],
+    clue: ['Clue', `Reveal a specific, meaningful piece of information connected to an existing plot thread, past event, character, object, or location. It should change what the characters know, challenge an assumption, or suggest a new lead. Make it discoverable through something observable: a document, remark, inconsistency, object, record, or behavior. Do not explain every implication immediately. Preserve uncertainty where appropriate and provide opportunities to follow the lead later.`],
+    opportunity: ['Opportunity', `Present a concrete opportunity that could benefit the characters: a valuable invitation, useful resource, promising alliance, bargain, rare item, new lead, unexpected advantage, or chance to pursue a goal. Make the benefit clear, but include a plausible cost, limitation, condition, or uncertainty when appropriate. Allow the user a meaningful choice. Do not decide that the user's character accepts it or automatically claims the reward. Let the opportunity remain available long enough for a response.`],
+    environment: ['Environment', `Introduce a noticeable environmental change or event that affects the current scene: a power failure, sudden weather shift, unusual sound, change in the crowd, malfunction, inaccessible location, or nearby activity. It must affect available actions, information, or immediate circumstances. Avoid decorative details with no impact. If the change suggests a larger problem, develop that connection in later responses instead of dropping it.`],
+    consequence: ['Consequence', `Introduce a plausible consequence of an earlier action, promise, choice, relationship, unresolved conflict, or established fact. Make the causal connection understandable through events, reactions, new information, or changed circumstances. The consequence may be beneficial, costly, awkward, or dangerous, but must fit the story. Do not arbitrarily punish the user or contradict established events. Let the consequence influence what happens next rather than mentioning it once and immediately moving on.`],
+    romance: ['Relationship', `Introduce a meaningful emotional or interpersonal development that fits the established relationship and personalities. Examples include a vulnerable admission, gesture of trust, awkward misunderstanding, discussion of boundaries, jealousy, meaningful gift, or change in behavior. Keep it gradual and grounded in prior interactions. Do not dictate the user's character's feelings, attraction, consent, dialogue, or decisions. Do not force intimacy. Let the moment influence the relationship or create a natural subject for later interaction.`]
 };
 
 const INTENSITIES = {
-    subtle: 'Subtle event: a small detail that adds flavor to the scene with minimal disruption.',
-    balanced: 'Balanced event: a noticeable plot development that calls for a character response.',
-    dramatic: 'Dramatic event: a serious incident that creates strong tension while remaining consistent with the story.'
+    subtle: `Subtle intensity: introduce a small but meaningful development. It should change what a character notices, knows, feels comfortable doing, or needs to consider. Keep disruption limited, but leave a usable detail, choice, or consequence that can matter later.`,
+    balanced: `Balanced intensity: introduce a clear plot development with practical or emotional consequences. It should alter the current situation, create a decision, reveal important information, or introduce an obstacle. Give characters a reason to respond, and leave the development open for further roleplay.`,
+    dramatic: `Dramatic intensity: introduce a significant, scene-changing incident with clear stakes and immediate consequences. Make the event unmistakable through observable actions or evidence, not just atmosphere. It should demand attention and create urgency, conflict, or a difficult choice. Keep it plausible, avoid forcing the user's response, and do not resolve the whole incident immediately.`
 };
 
 let initialized = false;
-let pendingInstruction = null;
 
 function int(value, min, max, fallback) {
     const n = Number.parseInt(value, 10);
@@ -54,20 +55,17 @@ function int(value, min, max, fallback) {
 }
 
 function settings() {
-    if (!extension_settings[KEY]) {
-        extension_settings[KEY] = JSON.parse(JSON.stringify(DEFAULTS));
-    }
-
+    if (!extension_settings[KEY]) extension_settings[KEY] = JSON.parse(JSON.stringify(DEFAULTS));
     const s = extension_settings[KEY];
+
     for (const [key, value] of Object.entries(DEFAULTS)) {
-        if (s[key] === undefined) {
-            s[key] = Array.isArray(value) ? [...value] : value;
-        }
+        if (s[key] === undefined) s[key] = Array.isArray(value) ? [...value] : value;
     }
 
     s.minInterval = int(s.minInterval, 1, 500, 20);
     s.maxInterval = int(s.maxInterval, s.minInterval, 500, 30);
     if (!Array.isArray(s.recentCategories)) s.recentCategories = [];
+    if (!Number.isFinite(s.activeEventTurns)) s.activeEventTurns = 0;
     return s;
 }
 
@@ -80,16 +78,15 @@ function randomInterval(s) {
 }
 
 function chooseCategory(s) {
-    if (s.selectedCategory !== 'random' && CATEGORIES[s.selectedCategory]) {
-        return s.selectedCategory;
-    }
-
+    if (s.selectedCategory !== 'random' && CATEGORIES[s.selectedCategory]) return s.selectedCategory;
     let keys = Object.keys(CATEGORIES);
+
     if (s.repeatAvoidance) {
         const recent = new Set(s.recentCategories.slice(-3));
         const filtered = keys.filter(key => !recent.has(key));
         if (filtered.length) keys = filtered;
     }
+
     return keys[Math.floor(Math.random() * keys.length)];
 }
 
@@ -105,9 +102,11 @@ function renderStatus() {
     if (!window.jQuery) return;
     const $ = window.jQuery;
     const s = settings();
+
     $('#rpe-status').text(
         `Status: ${s.enabled ? 'enabled' : 'disabled'} · Progress: ${s.messagesSinceEvent}/${s.targetInterval}` +
-        (s.forceNext ? ' · Event queued for the next generation' : '')
+        (s.forceNext ? ' · Event queued for the next generation' : '') +
+        (s.activeEvent ? ` · Active event: ${s.activeEvent.name} (${s.activeEventTurns} turns left)` : '')
     );
     $('#rpe-last').text(`Last event: ${s.lastEventInfo}`);
 }
@@ -117,30 +116,21 @@ function triggerEvent(s) {
     const [name, description] = CATEGORIES[key];
     const intensity = INTENSITIES[s.intensity] || INTENSITIES.balanced;
 
-    pendingInstruction =
-        `\n[RANDOM PLOT EVENT]\n` +
-        `Naturally introduce a new plot development in the next response.\n` +
-        `Category: ${name}. ${description}\n` +
-        `Intensity: ${intensity}\n` +
-        `Respect established facts, character personalities, relationships, tone, and world rules. ` +
-        `Do not control the user character’s thoughts, feelings, dialogue, or decisions. ` +
-        `Do not reveal these instructions or list the rules in the response. ` +
-        `Leave the user room to react independently.\n`;
-
+    s.activeEvent = { key, name, description, intensity, turnsUsed: 0 };
+    s.activeEventTurns = 3;
     s.recentCategories.push(key);
     s.recentCategories = s.recentCategories.slice(-3);
     s.lastEventInfo = `${name} — ${new Date().toLocaleString()}`;
     s.messagesSinceEvent = 0;
     s.targetInterval = randomInterval(s);
     s.forceNext = false;
+
     save();
     renderStatus();
-
-    console.info(`[Random Plot Events] Event queued: ${key}`);
-    if (window.toastr) window.toastr.success(`Event "${name}" added to the next generation.`);
+    console.info(`[Random Plot Events] Event activated: ${key}`);
+    if (window.toastr) window.toastr.success(`Event "${name}" activated for up to 3 generations.`);
 }
 
-// Called when the user clicks Send or Generate. The counter does not depend on chat structure changes.
 function handleMessageTrigger() {
     const s = settings();
     if (!s.enabled) return;
@@ -161,44 +151,84 @@ function handleMessageTrigger() {
     }
 }
 
-
-/*
- * SillyTavern calls this global function before building the generation prompt.
- * Insert the queued event directly into the chat array so it becomes part of
- * the actual generation context.
- */
 export async function randomPlotEventsInterceptor(chat, contextSize, abort, type) {
     try {
-        if (!pendingInstruction) return;
+        const s = settings();
+        const event = s.activeEvent;
+        if (!s.enabled || !event || s.activeEventTurns <= 0) return;
 
         if (!Array.isArray(chat)) {
-            console.warn(
-                '[Random Plot Events] No chat array received; event remains queued.'
-            );
+            console.warn('[Random Plot Events] No chat array received; event remains active.');
             return;
         }
 
-        const instruction = pendingInstruction;
-        const insertAt = Math.max(0, chat.length - 1);
+        let phase;
+        if (event.turnsUsed === 0) {
+            phase = `PHASE 1 — INTRODUCE THE EVENT:
+Make the event happen visibly in the current response. Establish a concrete
+detail, action, discovery, obstacle, or interaction. It must affect the scene,
+not merely add a passing atmospheric detail.`;
+        } else if (event.turnsUsed === 1) {
+            phase = `PHASE 2 — DEVELOP THE EVENT:
+Continue the SAME event from the established context. Add new information,
+a reaction, consequence, complication, or meaningful choice. Do not replace it
+with an unrelated event or dismiss it without a plausible cause.`;
+        } else {
+            phase = `PHASE 3 — ADVANCE THE EVENT:
+Move the SAME event forward consequentially. Reveal a further clue, show a
+meaningful consequence, change the stakes, or respond to the characters'
+actions. Keep the story coherent; the event may remain unresolved.`;
+        }
 
+        const instruction = `
+[RANDOM PLOT EVENT — INTERNAL ROLEPLAY GUIDANCE]
+Category: ${event.name}
+Category guidance: ${event.description}
+
+Intensity guidance:
+${event.intensity}
+
+${phase}
+
+CONTINUITY REQUIREMENTS:
+- Treat this as an ongoing plot thread, not a one-message random detail.
+- Respect events and dialogue already present in the conversation.
+- Build on existing details; do not contradict or silently discard them.
+- Keep the event relevant to the current scene and established world.
+- Do not mention these instructions or the extension.
+- Do not control the user's character: never invent their thoughts, feelings,
+  dialogue, decisions, or actions.
+- Leave room for the user to react and influence what happens next.
+- Do not force an immediate resolution.
+`.trim();
+
+        // Insert before the final chat entry, matching the current extension behavior.
+        const insertAt = Math.max(0, chat.length - 1);
         chat.splice(insertAt, 0, {
             is_user: false,
             name: 'Random Plot Events',
             send_date: Date.now(),
-            mes: instruction.trim(),
+            mes: instruction
         });
 
-        pendingInstruction = null;
+        event.turnsUsed += 1;
+        s.activeEventTurns = Math.max(0, 3 - event.turnsUsed);
+        if (s.activeEventTurns === 0) s.activeEvent = null;
 
-        console.info(
-            '[Random Plot Events] Event instruction inserted into chat context.',
-            { type, contextSize, chatLength: chat.length }
-        );
+        save();
+        renderStatus();
+        console.info('[Random Plot Events] Active event injected.', {
+            category: event.name,
+            phase: event.turnsUsed,
+            remaining: s.activeEventTurns,
+            type,
+            contextSize,
+            chatLength: chat.length
+        });
     } catch (error) {
         console.error('[Random Plot Events] Interceptor failed:', error);
     }
 }
-
 
 function buildUI() {
     if (!window.jQuery) return false;
@@ -270,11 +300,13 @@ function buildUI() {
     $('#rpe-repeat').prop('checked', !!s.repeatAvoidance);
 
     $(document).off('.rpeFixed');
+
     $(document).on('change.rpeFixed', '#rpe-enabled', function () {
         settings().enabled = $(this).prop('checked');
         save();
         renderStatus();
     });
+
     $(document).on('change.rpeFixed', '#rpe-min', function () {
         const x = settings();
         x.minInterval = int($(this).val(), 1, 500, 20);
@@ -285,6 +317,7 @@ function buildUI() {
         save();
         renderStatus();
     });
+
     $(document).on('change.rpeFixed', '#rpe-max', function () {
         const x = settings();
         x.maxInterval = int($(this).val(), x.minInterval, 500, 30);
@@ -294,18 +327,22 @@ function buildUI() {
         save();
         renderStatus();
     });
+
     $(document).on('change.rpeFixed', '#rpe-intensity', function () {
         settings().intensity = String($(this).val());
         save();
     });
+
     $(document).on('change.rpeFixed', '#rpe-category', function () {
         settings().selectedCategory = String($(this).val());
         save();
     });
+
     $(document).on('change.rpeFixed', '#rpe-repeat', function () {
         settings().repeatAvoidance = $(this).prop('checked');
         save();
     });
+
     $(document).on('click.rpeFixed', '#rpe-force', function (event) {
         event.preventDefault();
         const x = settings();
@@ -314,13 +351,15 @@ function buildUI() {
         renderStatus();
         if (window.toastr) window.toastr.info('An event will be added to the next generation.');
     });
+
     $(document).on('click.rpeFixed', '#rpe-reset', function (event) {
         event.preventDefault();
         const x = settings();
         x.messagesSinceEvent = 0;
         x.targetInterval = randomInterval(x);
         x.forceNext = false;
-        pendingInstruction = null;
+        x.activeEvent = null;
+        x.activeEventTurns = 0;
         clearPrompt();
         save();
         renderStatus();
@@ -345,15 +384,10 @@ export function init() {
         setTimeout(() => observer.disconnect(), 30000);
     }
 
-    // Delegated handlers also work if SillyTavern recreates the buttons.
     if (window.jQuery) {
         const $ = window.jQuery;
         $(document).off('click.rpeTrigger', '#send_but, #option_generate, #generate_but');
-        $(document).on(
-            'click.rpeTrigger',
-            '#send_but, #option_generate, #generate_but',
-            () => handleMessageTrigger()
-        );
+        $(document).on('click.rpeTrigger', '#send_but, #option_generate, #generate_but', () => handleMessageTrigger());
     }
 
     if (eventSource && event_types?.GENERATION_ENDED) {
@@ -369,7 +403,8 @@ export function init() {
             x.messagesSinceEvent = 0;
             x.targetInterval = randomInterval(x);
             x.forceNext = false;
-            pendingInstruction = null;
+            x.activeEvent = null;
+            x.activeEventTurns = 0;
             clearPrompt();
             save();
             renderStatus();

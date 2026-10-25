@@ -1,9 +1,14 @@
 {
-  "display_name": "Random Plot Event",
-  "name": "random-plot-events",
-  "version": "1.0.1",
-  "author": "AI Collaborator",
-  "description": "Генерирует случайные сюжетные события по категориям с настраиваемой интенсивностью.",
+  "display_name": "Random Plot Events (Fixed)",
+  "loading_order": 100,
+  "requires": [],
+  "optional": [],
   "js": "index.js",
-  "css": "style.css"
+  "css": "style.css",
+  "author": "casazabot",
+  "version": "2.0.2",
+  "homePage": "https://github.com/casazabot-sudo/random-plot-events",
+  "auto_update": false,
+  "generate_interceptor": "randomPlotEventsInterceptor",
+  "hooks": { "activate": "init" }
 }

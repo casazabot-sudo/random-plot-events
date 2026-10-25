@@ -1,412 +1,236 @@
-import { extension_settings, saveSettingsDebounced } from '../../../extensions.js';
+import { extension_settings, saveSettingsDebounced } from "../../../extensions.js";
+import { eventSource, event_types } from "../../../script.js";
 
+const MODULE_NAME = "random_plot_events";
 
-
-function showRpeDiagnostic() {
-    const label = document.createElement('div');
-    label.textContent = 'Random Plot Events: файл запущен';
-    label.style.cssText =
-        'position:fixed;bottom:70px;left:10px;z-index:999999;' +
-        'background:#176b36;color:white;padding:12px;border-radius:8px';
-
-    (document.body || document.documentElement).appendChild(label);
-}
-
-if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', showRpeDiagnostic, { once: true });
-} else {
-    showRpeDiagnostic();
-}
-
-
-const KEY = 'random_plot_events';
-const DEFAULTS = {
-    automaticEnabled: true,
-    minMessages: 20,
-    maxMessages: 30,
-    intensity: 'balanced',
-    avoidRecentRepeats: true,
-    categories: {
-        discovery: true,
-        complication: true,
-        encounter: true,
-        danger: true,
-        social: true,
-        mystery: true,
-        opportunity: true,
-        atmosphere: true,
-        consequence: true,
-        romance: false,
-    },
-    chats: {},
+// Настройки по умолчанию
+const defaultSettings = {
+    enabled: true,
+    minInterval: 20,
+    maxInterval: 30,
+    intensity: "balanced", // subtle, balanced, dramatic
+    currentCount: 0,
+    targetInterval: 25,
+    forceNext: false,
+    recentCategories: [],
+    lastEventInfo: "Событий пока не было."
 };
 
-const CATEGORY_LABELS = {
-    discovery: 'Тайна или открытие',
-    complication: 'Осложнение',
-    encounter: 'Неожиданная встреча',
-    danger: 'Опасность',
-    social: 'Социальный конфликт',
-    mystery: 'Загадка или улика',
-    opportunity: 'Новая возможность',
-    atmosphere: 'Событие окружения',
-    consequence: 'Последствие поступка',
-    romance: 'Романтическое развитие',
+// 10 Категорий событий
+const CATEGORIES = [
+    { id: "mystery", name: "Тайны", desc: "Неожиданная загадка, странный артефакт, необъяснимый феномен или намёк на скрытую тайну." },
+    { id: "complication", name: "Осложнения", desc: "Непредвиденная техническая проблема, задержка, поломка или помеха текущим планам." },
+    { id: "encounter", name: "Встреча", desc: "Появление нового или неожиданного старого знакомого, случайного прохожего или вестника." },
+    { id: "danger", name: "Опасность", desc: "Внезапная угроза, ловушка, враждебное окружение или появление недоброжелателей." },
+    { id: "social", name: "Социальный конфликт", desc: "Спор, недопонимание, слухи, напряжение в коллективе или столкновение интересов." },
+    { id: "clue", name: "Улика", desc: "Полезная деталь, подсказка, документ или след, проливающий свет на текущую ситуацию." },
+    { id: "opportunity", name: "Возможность", desc: "Шанс быстро продвинуться вперед, удачная находка, выгодное предложение или короткий путь." },
+    { id: "environment", name: "Событие окружения", desc: "Резкая смена погоды, шум на улице, природное явление или изменение обстановки вокруг." },
+    { id: "consequence", name: "Последствие поступков", desc: "Эффект от прошлых действий персонажей, реакция мира или отголоски прошлых решений." },
+    { id: "romance", name: "Романтическое развитие", desc: "Интимный момент сближения, случайное прикосновение, смущение, искра или эмоциональное откровение." }
+];
+
+// Уровни интенсивности
+const INTENSITIES = {
+    subtle: "Ненавязчивое событие: легкий штрих к фону сцены, минимальное вмешательство.",
+    balanced: "Сбалансированное событие: умеренный сюжетный поворот, требующий реакции персонажей.",
+    dramatic: "Драматичное событие: серьезное происшествие, резко меняющее обстановку или создающее сильное напряжение."
 };
 
-function clone(value) {
-    return JSON.parse(JSON.stringify(value));
-}
-
-function getSettings() {
-    if (!extension_settings[KEY]) {
-        extension_settings[KEY] = clone(DEFAULTS);
-    }
-    const s = extension_settings[KEY];
-    for (const [key, value] of Object.entries(DEFAULTS)) {
-        if (s[key] === undefined) s[key] = clone(value);
-    }
-    if (!s.categories || typeof s.categories !== 'object') s.categories = clone(DEFAULTS.categories);
-    for (const [key, value] of Object.entries(DEFAULTS.categories)) {
-        if (s.categories[key] === undefined) s.categories[key] = value;
-    }
-    if (!s.chats || typeof s.chats !== 'object') s.chats = {};
-    return s;
-}
-
-function save() {
-    saveSettingsDebounced();
-}
-
-function getContext() {
-    return SillyTavern.getContext();
-}
-
-function getChatKey() {
-    const ctx = getContext();
-    const chatId = ctx.chatId || ctx.getCurrentChatId?.() || 'current-chat';
-    const character = ctx.characterId !== undefined
-        ? (ctx.characters?.[ctx.characterId]?.avatar || ctx.characters?.[ctx.characterId]?.name || `character-${ctx.characterId}`)
-        : (ctx.groupId || 'group');
-    return `${character}::${chatId}`;
-}
-
-function intInRange(value, min, max) {
-    const parsed = Number.parseInt(value, 10);
-    return Number.isFinite(parsed) ? Math.max(min, Math.min(max, parsed)) : min;
-}
-
-function randomInt(min, max) {
+function getRandomInt(min, max) {
     return Math.floor(Math.random() * (max - min + 1)) + min;
 }
 
-function getChatState() {
-    const s = getSettings();
-    const key = getChatKey();
-    if (!s.chats[key]) {
-        const min = intInRange(s.minMessages, 1, 500);
-        const max = intInRange(s.maxMessages, min, 1000);
-        s.chats[key] = {
-            nextAt: countMessages(getContext().chat || []) + randomInt(min, max),
-            pendingManual: false,
-            lastEventAt: 0,
-            recentCategories: [],
-            lastStatus: 'Ожидание события.',
-        };
-        save();
+function initSettings() {
+    if (!extension_settings[MODULE_NAME]) {
+        extension_settings[MODULE_NAME] = { ...defaultSettings };
+    } else {
+        for (const key in defaultSettings) {
+            if (extension_settings[MODULE_NAME][key] === undefined) {
+                extension_settings[MODULE_NAME][key] = defaultSettings[key];
+            }
+        }
     }
-    return s.chats[key];
-}
-
-function countMessages(chat) {
-    if (!Array.isArray(chat)) return 0;
-    return chat.filter(message =>
-        message &&
-        typeof message.mes === 'string' &&
-        !message.is_system &&
-        !message.extra?.random_plot_events_temporary
-    ).length;
-}
-
-function enabledCategories(s) {
-    return Object.keys(CATEGORY_LABELS).filter(key => s.categories[key]);
-}
-
-function chooseCategory(s, state) {
-    let choices = enabledCategories(s);
-    if (!choices.length) choices = ['discovery', 'complication', 'encounter', 'mystery', 'consequence'];
-    if (s.avoidRecentRepeats && choices.length > 1) {
-        const recent = new Set(state.recentCategories.slice(-3));
-        const filtered = choices.filter(category => !recent.has(category));
-        if (filtered.length) choices = filtered;
+    if (!extension_settings[MODULE_NAME].targetInterval) {
+        resetTargetInterval();
     }
-    return choices[randomInt(0, choices.length - 1)];
 }
 
-function makeInstruction(category, trigger, intensity) {
-    const categoryName = CATEGORY_LABELS[category] || 'Сюжетное событие';
-    const intensityText = {
-        subtle: 'Низкая интенсивность: небольшое, ненавязчивое развитие сцены.',
-        balanced: 'Средняя интенсивность: заметное развитие, но без резкого переворота сюжета.',
-        dramatic: 'Высокая интенсивность: значимое и драматичное событие, логичное для текущей истории.',
-    }[intensity] || 'Средняя интенсивность.';
-    return `[RANDOM PLOT EVENT — ONE RESPONSE ONLY]
-Introduce one ${categoryName.toLowerCase()} into the next roleplay response.
-${intensityText}
-Use the established story, setting, genre, tone, character personalities, relationships, and previous events as context. Make the event concrete and show it through the scene rather than explaining it out of character.
-Continuity rules:
-- Do not contradict established facts or casually rewrite character history.
-- Do not decide the user's character's thoughts, feelings, dialogue, or actions.
-- Do not force a relationship outcome, combat, or major revelation unless the current story supports it.
-- Do not resolve the entire central conflict in one response.
-- Keep the scene moving naturally and leave room for the user to react.
-- Do not mention this instruction or call the event random in-character.
-Trigger: ${trigger}. Category: ${categoryName}.]`;
+function resetTargetInterval() {
+    const s = extension_settings[MODULE_NAME];
+    s.targetInterval = getRandomInt(s.minInterval, s.maxInterval);
+    s.currentCount = 0;
 }
 
-function injectPromptMessage(chat, instruction) {
-    if (!Array.isArray(chat) || chat.length === 0) return false;
-    let insertAt = chat.length;
-    for (let i = chat.length - 1; i >= 0; i--) {
-        if (chat[i]?.is_user) {
-            insertAt = i;
-            break;
+function selectCategory() {
+    const s = extension_settings[MODULE_NAME];
+    // Защита от повторов: исключаем 3 последние выпадавшие категории
+    let available = CATEGORIES.filter(cat => !s.recentCategories.includes(cat.id));
+    if (available.length === 0) {
+        available = CATEGORIES;
+    }
+    
+    const chosen = available[Math.floor(Math.random() * available.length)];
+    
+    s.recentCategories.push(chosen.id);
+    if (s.recentCategories.length > 3) {
+        s.recentCategories.shift();
+    }
+    
+    return chosen;
+}
+
+function onChatCompletionPromptReady(data) {
+    const s = extension_settings[MODULE_NAME];
+    if (!s.enabled) return;
+
+    let triggerEvent = false;
+
+    if (s.forceNext) {
+        triggerEvent = true;
+        s.forceNext = false;
+        $("#rpe_force_btn").removeClass("forced");
+    } else {
+        s.currentCount++;
+        if (s.currentCount >= s.targetInterval) {
+            triggerEvent = true;
+            resetTargetInterval();
         }
     }
 
-    // Prompt-interceptor chat is the prompt being assembled. The marker allows
-    // the extension to avoid counting this temporary instruction as a chat turn.
-    chat.splice(insertAt, 0, {
-        is_user: false,
-        name: 'Plot Event Director',
-        mes: instruction,
-        send_date: Date.now(),
-        extra: { random_plot_events_temporary: true },
-    });
-    return true;
+    if (triggerEvent) {
+        const category = selectCategory();
+        const intensityDesc = INTENSITIES[s.intensity] || INTENSITIES.balanced;
+        
+        s.lastEventInfo = `Последнее событие: [${category.name}] (${new Date().toLocaleTimeString()})`;
+        updateUIStatus();
+
+        const eventInstruction = `
+[СЮЖЕТНОЕ СОБЫТИЕ СИСТЕМЫ]
+Внезапно в текущую сцену вмешивается случайное событие.
+Категория: "${category.name}" — ${category.desc}
+Уровень интенсивности: ${intensityDesc}
+
+СТРОГИЕ ПРАВИЛА ДЛЯ ИИ:
+1. Соблюдай характеры персонажей, историю их отношений и уже установленные факты лора.
+2. Категорически ЗАПРЕЩЕНО произвольно управлять действиями, мыслями или словами персонажа пользователя (пользователя / {{user}}). Опиши событие и реакцию окружающего мира/NPC, предоставив игроку полную свободу действий.
+3. Органично вплети событие в текущую сцену.
+`;
+
+        if (data.system_prompt) {
+            data.system_prompt += "\n" + eventInstruction;
+        } else if (Array.isArray(data.prompt)) {
+            data.prompt.push({ role: "system", content: eventInstruction });
+        }
+    }
+    saveSettingsDebounced();
 }
 
-globalThis.randomPlotEventsInterceptor = async function(chat, contextSize, abort, type) {
-    try {
-        const s = getSettings();
-        const state = getChatState();
-        const total = countMessages(chat);
-        const manual = Boolean(state.pendingManual);
-        const automatic = Boolean(s.automaticEnabled && total >= state.nextAt);
-
-        if (!manual && !automatic) return;
-
-        const category = chooseCategory(s, state);
-        const trigger = manual ? 'user requested a plot event manually' : 'random message interval reached';
-        const instruction = makeInstruction(category, trigger, s.intensity);
-        if (!injectPromptMessage(chat, instruction)) return;
-
-        if (manual) state.pendingManual = false;
-        state.lastEventAt = total;
-        state.recentCategories.push(category);
-        state.recentCategories = state.recentCategories.slice(-5);
-
-        const min = intInRange(s.minMessages, 1, 500);
-        const max = intInRange(s.maxMessages, min, 1000);
-        state.nextAt = total + randomInt(min, max);
-        state.lastStatus = `${CATEGORY_LABELS[category]} — событие добавлено в промпт.`;
-        save();
-        updateUI();
-    } catch (error) {
-        console.error('[Random Plot Events] Ошибка перехватчика:', error);
-    }
-};
-
-function updateUI() {
-    const s = getSettings();
-    const state = getChatState();
-    const status = document.getElementById('rpe_status');
-    const button = document.getElementById('rpe_force_event');
-    const toggle = document.getElementById('rpe_auto_enabled');
-    if (status) {
-        const remaining = Math.max(0, state.nextAt - countMessages(getContext().chat || []));
-        status.textContent = state.pendingManual
-            ? 'Ручное событие ожидает следующей генерации.'
-            : `${state.lastStatus} Авто-событие: примерно через ${remaining} сообщений.`;
-    }
-    if (button) button.textContent = state.pendingManual
-        ? 'Событие уже в очереди'
-        : 'Событие в следующем ответе';
-    if (toggle) toggle.checked = Boolean(s.automaticEnabled);
+function updateUIStatus() {
+    const s = extension_settings[MODULE_NAME];
+    $("#rpe_status").text(s.lastEventInfo);
+    $("#rpe_counter").text(`Сообщений до события: ${s.currentCount} / ${s.targetInterval}`);
 }
 
-function buildUI() {
-    if (document.getElementById('random_plot_events_panel')) return true;
-    // SillyTavern may load third-party extension scripts before the settings
-    // container exists. Retry on later DOM mutations instead of silently exiting.
-    const target = document.querySelector('#extensions_settings2, #extensions_settings');
-    if (!target) return false;
+function setupUI() {
+    const s = extension_settings[MODULE_NAME];
 
-    const panel = document.createElement('div');
-    panel.id = 'random_plot_events_panel';
-    panel.className = 'rpe-panel';
-    panel.innerHTML = `
-      <div class="inline-drawer">
+    const html = `
+    <div class="inline-drawer">
         <div class="inline-drawer-toggle inline-drawer-header">
-          <b>Random Plot Events</b>
-          <div class="inline-drawer-icon fa-solid fa-circle-chevron-down down"></div>
+            <b>Случайные сюжетные события</b>
+            <div class="inline-drawer-icon">
+                <i class="fa-solid fa-chevron-down"></i>
+            </div>
         </div>
-        <div class="inline-drawer-content">
-          <label class="rpe-toggle">
-            <input id="rpe_auto_enabled" type="checkbox">
-            <span>Автоматические события</span>
-          </label>
-          <div class="rpe-range">
-            <label for="rpe_min">Минимум сообщений</label>
-            <input id="rpe_min" type="number" min="1" max="500" step="1">
-          </div>
-          <div class="rpe-range">
-            <label for="rpe_max">Максимум сообщений</label>
-            <input id="rpe_max" type="number" min="1" max="1000" step="1">
-          </div>
-          <div class="rpe-range">
-            <label for="rpe_intensity">Интенсивность</label>
-            <select id="rpe_intensity">
-              <option value="subtle">Ненавязчивая</option>
-              <option value="balanced">Сбалансированная</option>
-              <option value="dramatic">Драматичная</option>
-            </select>
-          </div>
-          <label class="rpe-toggle">
-            <input id="rpe_avoid_repeats" type="checkbox">
-            <span>Избегать недавних повторов категорий</span>
-          </label>
-          <details class="rpe-categories">
-            <summary>Категории событий</summary>
-            <div id="rpe_category_list"></div>
-          </details>
-          <button id="rpe_force_event" class="menu_button">Событие в следующем ответе</button>
-          <small id="rpe_status" class="rpe-status"></small>
+        <div class="inline-drawer-content" style="display: none;">
+            <div class="rpe-settings-container">
+                <div class="flex-container">
+                    <label class="checkbox_label">
+                        <input type="checkbox" id="rpe_enabled" ${s.enabled ? "checked" : ""}>
+                        <span>Включить случайные события</span>
+                    </label>
+                </div>
+
+                <hr class="sys-hr">
+
+                <div class="rpe-setting-row">
+                    <label>Интервал сообщений (мин / макс):</label>
+                    <div class="rpe-inputs">
+                        <input type="number" id="rpe_min" value="${s.minInterval}" min="1" max="100" style="width: 60px;">
+                        <span>до</span>
+                        <input type="number" id="rpe_max" value="${s.maxInterval}" min="2" max="200" style="width: 60px;">
+                    </div>
+                </div>
+
+                <div class="rpe-setting-row">
+                    <label>Интенсивность событий:</label>
+                    <select id="rpe_intensity" class="text_pole">
+                        <option value="subtle" ${s.intensity === 'subtle' ? 'selected' : ''}>Ненавязчивые события</option>
+                        <option value="balanced" ${s.intensity === 'balanced' ? 'selected' : ''}>Сбалансированные сюжетные повороты</option>
+                        <option value="dramatic" ${s.intensity === 'dramatic' ? 'selected' : ''}>Драматичные происшествия</option>
+                    </select>
+                </div>
+
+                <hr class="sys-hr">
+
+                <div class="rpe-actions">
+                    <button id="rpe_force_btn" class="menu_button">Вызвать событие в следующем ответе</button>
+                </div>
+
+                <div class="rpe-info-panel">
+                    <div id="rpe_status">${s.lastEventInfo}</div>
+                    <div id="rpe_counter">Сообщений до события: ${s.currentCount} / ${s.targetInterval}</div>
+                </div>
+            </div>
         </div>
-      </div>`;
-    target.appendChild(panel);
+    </div>
+    `;
 
-    const s = getSettings();
-    panel.querySelector('#rpe_min').value = s.minMessages;
-    panel.querySelector('#rpe_max').value = s.maxMessages;
-    panel.querySelector('#rpe_intensity').value = s.intensity;
-    panel.querySelector('#rpe_avoid_repeats').checked = s.avoidRecentRepeats;
+    $("#extensions_settings").append(html);
 
-    const categoryList = panel.querySelector('#rpe_category_list');
-    for (const [key, label] of Object.entries(CATEGORY_LABELS)) {
-        const row = document.createElement('label');
-        row.className = 'rpe-category';
-        const checkbox = document.createElement('input');
-        checkbox.type = 'checkbox';
-        checkbox.checked = Boolean(s.categories[key]);
-        checkbox.addEventListener('change', () => {
-            s.categories[key] = checkbox.checked;
-            save();
-        });
-        const span = document.createElement('span');
-        span.textContent = label;
-        row.append(checkbox, span);
-        categoryList.appendChild(row);
-    }
-
-    panel.querySelector('#rpe_auto_enabled').addEventListener('change', event => {
-        s.automaticEnabled = event.target.checked;
-        save();
-        updateUI();
+    $("#rpe_enabled").on("change", function() {
+        s.enabled = $(this).is(":checked");
+        saveSettingsDebounced();
     });
 
-    const updateRange = () => {
-        s.minMessages = intInRange(panel.querySelector('#rpe_min').value, 1, 500);
-        s.maxMessages = intInRange(panel.querySelector('#rpe_max').value, s.minMessages, 1000);
-        panel.querySelector('#rpe_min').value = s.minMessages;
-        panel.querySelector('#rpe_max').value = s.maxMessages;
-        const state = getChatState();
-        state.nextAt = countMessages(getContext().chat || []) + randomInt(s.minMessages, s.maxMessages);
-        save();
-        updateUI();
-    };
-    panel.querySelector('#rpe_min').addEventListener('change', updateRange);
-    panel.querySelector('#rpe_max').addEventListener('change', updateRange);
-
-    panel.querySelector('#rpe_intensity').addEventListener('change', event => {
-        s.intensity = event.target.value;
-        save();
-    });
-    panel.querySelector('#rpe_avoid_repeats').addEventListener('change', event => {
-        s.avoidRecentRepeats = event.target.checked;
-        save();
-    });
-    panel.querySelector('#rpe_force_event').addEventListener('click', () => {
-        const state = getChatState();
-        state.pendingManual = true;
-        state.lastStatus = 'Ручной запуск поставлен в очередь.';
-        save();
-        updateUI();
-        if (typeof toastr !== 'undefined') {
-            toastr.info('Сюжетное событие будет добавлено в следующую генерацию.');
+    $("#rpe_min").on("change", function() {
+        s.minInterval = parseInt($(this).val()) || 20;
+        if (s.minInterval >= s.maxInterval) {
+            s.maxInterval = s.minInterval + 5;
+            $("#rpe_max").val(s.maxInterval);
         }
+        saveSettingsDebounced();
     });
-    updateUI();
-    return true;
+
+    $("#rpe_max").on("change", function() {
+        s.maxInterval = parseInt($(this).val()) || 30;
+        if (s.maxInterval <= s.minInterval) {
+            s.minInterval = Math.max(1, s.maxInterval - 5);
+            $("#rpe_min").val(s.minInterval);
+        }
+        saveSettingsDebounced();
+    });
+
+    $("#rpe_intensity").on("change", function() {
+        s.intensity = $(this).val();
+        saveSettingsDebounced();
+    });
+
+    $("#rpe_force_btn").on("click", function() {
+        s.forceNext = true;
+        $(this).addClass("forced");
+        if (window.toastr) {
+            toastr.success("Случайное событие сработает в следующем ответе ИИ!", "Сюжет");
+        }
+        saveSettingsDebounced();
+    });
+
+    updateUIStatus();
 }
 
-let uiObserver = null;
-let initialized = false;
-
-export function init() {
-    getSettings();
-    // Try immediately, then watch for the settings panel to be created. This is
-    // important on slower/mobile browsers where extension JS can run early.
-    if (!buildUI() && !uiObserver && document.body) {
-        uiObserver = new MutationObserver(() => {
-            if (buildUI()) {
-                uiObserver.disconnect();
-                uiObserver = null;
-            }
-        });
-        uiObserver.observe(document.body, { childList: true, subtree: true });
-    }
-    const ctx = getContext();
-    if (!initialized && ctx.eventSource && ctx.event_types?.APP_READY) {
-        ctx.eventSource.on(ctx.event_types.APP_READY, () => {
-            if (!buildUI() && !uiObserver && document.body) {
-                uiObserver = new MutationObserver(() => {
-                    if (buildUI()) {
-                        uiObserver.disconnect();
-                        uiObserver = null;
-                    }
-                });
-                uiObserver.observe(document.body, { childList: true, subtree: true });
-            }
-        });
-    }
-    if (!initialized && ctx.eventSource && ctx.event_types?.CHAT_CHANGED) {
-        ctx.eventSource.on(ctx.event_types.CHAT_CHANGED, () => setTimeout(updateUI, 100));
-    }
-    initialized = true;
-}
-
-if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', init, { once: true });
-} else {
-    init();
-}
-try {
-    const rpeDiagnostic = document.createElement('div');
-    rpeDiagnostic.textContent =
-        'Random Plot Events: JavaScript выполняется';
-    rpeDiagnostic.style.cssText = [
-        'position:fixed',
-        'bottom:70px',
-        'left:10px',
-        'z-index:999999',
-        'padding:12px',
-        'background:#176b36',
-        'color:white',
-        'font-size:14px',
-        'border-radius:8px'
-    ].join(';');
-    document.body.appendChild(rpeDiagnostic);
-} catch (error) {
-    alert('Random Plot Events: ошибка индикатора — ' + error.message);
-}
+jQuery(async () => {
+    initSettings();
+    setupUI();
+    eventSource.on(event_types.CHAT_COMPLETION_PROMPT_READY, onChatCompletionPromptReady);
+});

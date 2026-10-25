@@ -1,4 +1,4 @@
-import { extension_settings, saveSettingsDebounced } from "../../../extensions.js";
+import { extension_settings, getContext } from "../../../extensions.js";
 import { eventSource, event_types } from "../../../script.js";
 
 const MODULE_NAME = "random_plot_events";
@@ -16,7 +16,7 @@ const defaultSettings = {
     lastEventInfo: "Событий пока не было."
 };
 
-// 10 Категорий событий
+// Категории событий
 const CATEGORIES = [
     { id: "mystery", name: "Тайны", desc: "Неожиданная загадка, странный артефакт, необъяснимый феномен или намёк на скрытую тайну." },
     { id: "complication", name: "Осложнения", desc: "Непредвиденная техническая проблема, задержка, поломка или помеха текущим планам." },
@@ -30,7 +30,7 @@ const CATEGORIES = [
     { id: "romance", name: "Романтическое развитие", desc: "Интимный момент сближения, случайное прикосновение, смущение, искра или эмоциональное откровение." }
 ];
 
-// Уровни интенсивности
+// Интенсивность
 const INTENSITIES = {
     subtle: "Ненавязчивое событие: легкий штрих к фону сцены, минимальное вмешательство.",
     balanced: "Сбалансированное событие: умеренный сюжетный поворот, требующий реакции персонажей.",
@@ -64,7 +64,6 @@ function resetTargetInterval() {
 
 function selectCategory() {
     const s = extension_settings[MODULE_NAME];
-    // Защита от повторов: исключаем 3 последние выпадавшие категории
     let available = CATEGORIES.filter(cat => !s.recentCategories.includes(cat.id));
     if (available.length === 0) {
         available = CATEGORIES;
@@ -112,9 +111,9 @@ function onChatCompletionPromptReady(data) {
 Уровень интенсивности: ${intensityDesc}
 
 СТРОГИЕ ПРАВИЛА ДЛЯ ИИ:
-1. Соблюдай характеры персонажей, историю их отношений и уже установленные факты лора.
-2. Категорически ЗАПРЕЩЕНО произвольно управлять действиями, мыслями или словами персонажа пользователя (пользователя / {{user}}). Опиши событие и реакцию окружающего мира/NPC, предоставив игроку полную свободу действий.
-3. Органично вплети событие в текущую сцену.
+1. Строго соблюдай характеры персонажей, историю их отношений и уже установленные факты лора.
+2. Категорически ЗАПРЕЩЕНО произвольно управлять действиями, мыслями или словами персонажа пользователя. Опиши событие и реакцию мира/окружающих NPC, предоставив игроку полную свободу действий.
+3. Органично вплети событие в текущий диалог или действие, не ломая логику повествования.
 `;
 
         if (data.system_prompt) {
@@ -123,7 +122,6 @@ function onChatCompletionPromptReady(data) {
             data.prompt.push({ role: "system", content: eventInstruction });
         }
     }
-    saveSettingsDebounced();
 }
 
 function updateUIStatus() {
@@ -189,9 +187,9 @@ function setupUI() {
 
     $("#extensions_settings").append(html);
 
+    // Обработчики событий UI
     $("#rpe_enabled").on("change", function() {
         s.enabled = $(this).is(":checked");
-        saveSettingsDebounced();
     });
 
     $("#rpe_min").on("change", function() {
@@ -200,30 +198,24 @@ function setupUI() {
             s.maxInterval = s.minInterval + 5;
             $("#rpe_max").val(s.maxInterval);
         }
-        saveSettingsDebounced();
     });
 
     $("#rpe_max").on("change", function() {
-        s.maxInterval = parseInt($(this).val()) || 30;
+        s.maxInterval = parseInt($(this).val()) / 1 || 30;
         if (s.maxInterval <= s.minInterval) {
             s.minInterval = Math.max(1, s.maxInterval - 5);
             $("#rpe_min").val(s.minInterval);
         }
-        saveSettingsDebounced();
     });
 
     $("#rpe_intensity").on("change", function() {
         s.intensity = $(this).val();
-        saveSettingsDebounced();
     });
 
     $("#rpe_force_btn").on("click", function() {
         s.forceNext = true;
         $(this).addClass("forced");
-        if (window.toastr) {
-            toastr.success("Случайное событие сработает в следующем ответе ИИ!", "Сюжет");
-        }
-        saveSettingsDebounced();
+        toastr.success("Случайное событие будет вызвано в следующем сообщении ИИ!", "Сюжет");
     });
 
     updateUIStatus();

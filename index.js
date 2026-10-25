@@ -1,14 +1,13 @@
-import { extension_settings, getContext } from "../../../extensions.js";
+import { extension_settings } from "../../../extensions.js";
 import { eventSource, event_types } from "../../../script.js";
 
 const MODULE_NAME = "random_plot_events";
 
-// Настройки по умолчанию
 const defaultSettings = {
     enabled: true,
     minInterval: 20,
     maxInterval: 30,
-    intensity: "balanced", // subtle, balanced, dramatic
+    intensity: "balanced",
     currentCount: 0,
     targetInterval: 25,
     forceNext: false,
@@ -16,7 +15,6 @@ const defaultSettings = {
     lastEventInfo: "Событий пока не было."
 };
 
-// Категории событий
 const CATEGORIES = [
     { id: "mystery", name: "Тайны", desc: "Неожиданная загадка, странный артефакт, необъяснимый феномен или намёк на скрытую тайну." },
     { id: "complication", name: "Осложнения", desc: "Непредвиденная техническая проблема, задержка, поломка или помеха текущим планам." },
@@ -30,7 +28,6 @@ const CATEGORIES = [
     { id: "romance", name: "Романтическое развитие", desc: "Интимный момент сближения, случайное прикосновение, смущение, искра или эмоциональное откровение." }
 ];
 
-// Интенсивность
 const INTENSITIES = {
     subtle: "Ненавязчивое событие: легкий штрих к фону сцены, минимальное вмешательство.",
     balanced: "Сбалансированное событие: умеренный сюжетный поворот, требующий реакции персонажей.",
@@ -70,12 +67,10 @@ function selectCategory() {
     }
     
     const chosen = available[Math.floor(Math.random() * available.length)];
-    
     s.recentCategories.push(chosen.id);
     if (s.recentCategories.length > 3) {
         s.recentCategories.shift();
     }
-    
     return chosen;
 }
 
@@ -101,20 +96,10 @@ function onChatCompletionPromptReady(data) {
         const category = selectCategory();
         const intensityDesc = INTENSITIES[s.intensity] || INTENSITIES.balanced;
         
-        s.lastEventInfo = `Последнее событие: [${category.name}] (${new Date().toLocaleTimeString()})`;
+        s.lastEventInfo = `Последнее событие: [${category.name}]`;
         updateUIStatus();
 
-        const eventInstruction = `
-[СЮЖЕТНОЕ СОБЫТИЕ СИСТЕМЫ]
-Внезапно в текущую сцену вмешивается случайное событие.
-Категория: "${category.name}" — ${category.desc}
-Уровень интенсивности: ${intensityDesc}
-
-СТРОГИЕ ПРАВИЛА ДЛЯ ИИ:
-1. Строго соблюдай характеры персонажей, историю их отношений и уже установленные факты лора.
-2. Категорически ЗАПРЕЩЕНО произвольно управлять действиями, мыслями или словами персонажа пользователя. Опиши событие и реакцию мира/окружающих NPC, предоставив игроку полную свободу действий.
-3. Органично вплети событие в текущий диалог или действие, не ломая логику повествования.
-`;
+        const eventInstruction = `\n[СЮЖЕТНОЕ СОБЫТИЕ СИСТЕМЫ]\nВнезапно в текущую сцену вмешивается случайное событие.\nКатегория: "${category.name}" — ${category.desc}\nИнтенсивность: ${intensityDesc}\nПРАВИЛА: Соблюдай характеры и лор. ЗАПРЕЩЕНО управлять действиями персонажа пользователя. Опиши реакцию мира и дай игроку свободу действий.\n`;
 
         if (data.system_prompt) {
             data.system_prompt += "\n" + eventInstruction;
@@ -127,7 +112,7 @@ function onChatCompletionPromptReady(data) {
 function updateUIStatus() {
     const s = extension_settings[MODULE_NAME];
     $("#rpe_status").text(s.lastEventInfo);
-    $("#rpe_counter").text(`Сообщений до события: ${s.currentCount} / ${s.targetInterval}`);
+    $("#rpe_counter").text(`До события: ${s.currentCount} / ${s.targetInterval}`);
 }
 
 function setupUI() {
@@ -137,85 +122,53 @@ function setupUI() {
     <div class="inline-drawer">
         <div class="inline-drawer-toggle inline-drawer-header">
             <b>Случайные сюжетные события</b>
-            <div class="inline-drawer-icon">
-                <i class="fa-solid fa-chevron-down"></i>
-            </div>
+            <div class="inline-drawer-icon"><i class="fa-solid fa-chevron-down"></i></div>
         </div>
         <div class="inline-drawer-content" style="display: none;">
             <div class="rpe-settings-container">
-                <div class="flex-container">
-                    <label class="checkbox_label">
-                        <input type="checkbox" id="rpe_enabled" ${s.enabled ? "checked" : ""}>
-                        <span>Включить случайные события</span>
-                    </label>
-                </div>
-
+                <label class="checkbox_label">
+                    <input type="checkbox" id="rpe_enabled" ${s.enabled ? "checked" : ""}>
+                    <span>Включить случайные события</span>
+                </label>
                 <hr class="sys-hr">
-
                 <div class="rpe-setting-row">
-                    <label>Интервал сообщений (мин / макс):</label>
+                    <label>Интервал (мин / макс):</label>
                     <div class="rpe-inputs">
-                        <input type="number" id="rpe_min" value="${s.minInterval}" min="1" max="100" style="width: 60px;">
-                        <span>до</span>
-                        <input type="number" id="rpe_max" value="${s.maxInterval}" min="2" max="200" style="width: 60px;">
+                        <input type="number" id="rpe_min" value="${s.minInterval}" min="1" max="100" style="width: 50px;">
+                        <span>-</span>
+                        <input type="number" id="rpe_max" value="${s.maxInterval}" min="2" max="200" style="width: 50px;">
                     </div>
                 </div>
-
                 <div class="rpe-setting-row">
-                    <label>Интенсивность событий:</label>
+                    <label>Интенсивность:</label>
                     <select id="rpe_intensity" class="text_pole">
-                        <option value="subtle" ${s.intensity === 'subtle' ? 'selected' : ''}>Ненавязчивые события</option>
-                        <option value="balanced" ${s.intensity === 'balanced' ? 'selected' : ''}>Сбалансированные сюжетные повороты</option>
-                        <option value="dramatic" ${s.intensity === 'dramatic' ? 'selected' : ''}>Драматичные происшествия</option>
+                        <option value="subtle" ${s.intensity === 'subtle' ? 'selected' : ''}>Ненавязчивые</option>
+                        <option value="balanced" ${s.intensity === 'balanced' ? 'selected' : ''}>Сбалансированные</option>
+                        <option value="dramatic" ${s.intensity === 'dramatic' ? 'selected' : ''}>Драматичные</option>
                     </select>
                 </div>
-
                 <hr class="sys-hr">
-
                 <div class="rpe-actions">
-                    <button id="rpe_force_btn" class="menu_button">Вызвать событие в следующем ответе</button>
+                    <button id="rpe_force_btn" class="menu_button">Вызвать событие в след. ответе</button>
                 </div>
-
                 <div class="rpe-info-panel">
                     <div id="rpe_status">${s.lastEventInfo}</div>
-                    <div id="rpe_counter">Сообщений до события: ${s.currentCount} / ${s.targetInterval}</div>
+                    <div id="rpe_counter">До события: ${s.currentCount} / ${s.targetInterval}</div>
                 </div>
             </div>
         </div>
-    </div>
-    `;
+    </div>`;
 
     $("#extensions_settings").append(html);
 
-    // Обработчики событий UI
-    $("#rpe_enabled").on("change", function() {
-        s.enabled = $(this).is(":checked");
-    });
-
-    $("#rpe_min").on("change", function() {
-        s.minInterval = parseInt($(this).val()) || 20;
-        if (s.minInterval >= s.maxInterval) {
-            s.maxInterval = s.minInterval + 5;
-            $("#rpe_max").val(s.maxInterval);
-        }
-    });
-
-    $("#rpe_max").on("change", function() {
-        s.maxInterval = parseInt($(this).val()) / 1 || 30;
-        if (s.maxInterval <= s.minInterval) {
-            s.minInterval = Math.max(1, s.maxInterval - 5);
-            $("#rpe_min").val(s.minInterval);
-        }
-    });
-
-    $("#rpe_intensity").on("change", function() {
-        s.intensity = $(this).val();
-    });
-
+    $("#rpe_enabled").on("change", function() { s.enabled = $(this).is(":checked"); });
+    $("#rpe_min").on("change", function() { s.minInterval = parseInt($(this).val()) || 20; });
+    $("#rpe_max").on("change", function() { s.maxInterval = parseInt($(this).val()) || 30; });
+    $("#rpe_intensity").on("change", function() { s.intensity = $(this).val(); });
     $("#rpe_force_btn").on("click", function() {
         s.forceNext = true;
         $(this).addClass("forced");
-        toastr.success("Случайное событие будет вызвано в следующем сообщении ИИ!", "Сюжет");
+        toastr.success("Событие будет вызвано в следующем сообщении!", "Сюжет");
     });
 
     updateUIStatus();

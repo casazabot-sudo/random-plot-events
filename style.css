@@ -1,31 +1,35 @@
-.rpe-panel { margin: 0.5em 0; }
-.rpe-panel .inline-drawer-content { padding: 0.6em 0.2em; }
-.rpe-toggle, .rpe-category {
-    display: flex; align-items: center; gap: 0.6em; margin: 0.55em 0;
+.rpe-settings-container {
+padding: 10px;
+display: flex;
+flex-direction: column;
+gap: 10px;
 }
-.rpe-range {
-    display: flex; align-items: center; justify-content: space-between;
-    gap: 0.8em; margin: 0.6em 0;
+​.rpe-setting-row {
+display: flex;
+justify-content: space-between;
+align-items: center;
 }
-.rpe-range input, .rpe-range select { width: 9em; max-width: 45%; }
-.rpe-categories { margin: 0.7em 0; }
-.rpe-categories summary { cursor: pointer; margin-bottom: 0.5em; }
-#rpe_category_list { display: grid; grid-template-columns: 1fr 1fr; gap: 0.15em 0.7em; }
-.rpe-category { font-size: 0.92em; }
-#rpe_force_event { width: 100%; margin-top: 0.6em; }
-.rpe-status { display: block; opacity: 0.8; margin-top: 0.7em; line-height: 1.4; }
-@media (max-width: 600px) {
-    #rpe_category_list { grid-template-columns: 1fr; }
-} 
-body::after {
-    content: "Random Plot Events: CSS загружен";
-    position: fixed;
-    bottom: 20px;
-    left: 10px;
-    z-index: 999999;
-    padding: 12px;
-    background: #176b36;
-    color: white;
-    border-radius: 8px;
-    font-size: 14px;
+​.rpe-inputs {
+display: flex;
+gap: 5px;
+align-items: center;
+}
+​.rpe-actions {
+display: flex;
+justify-content: center;
+}
+​#rpe_force_btn.forced {
+background-color: #c0392b !important;
+color: white !important;
+border-color: #e74c3c !important;
+}
+​.rpe-info-panel {
+background: rgba(0, 0, 0, 0.2);
+padding: 8px;
+border-radius: 6px;
+font-size: 0.9em;
+display: flex;
+flex-direction: column;
+gap: 4px;
+text-align: center;
 }

@@ -1,5 +1,11 @@
 import { extension_settings, saveSettingsDebounced } from '../../../extensions.js';
 
+
+document.body.insertAdjacentHTML(
+    'beforeend',
+    '<div style="position:fixed;bottom:70px;left:10px;z-index:999999;background:#176b36;color:white;padding:12px;border-radius:8px">Random Plot Events: файл запущен</div>'
+);
+
 const KEY = 'random_plot_events';
 const DEFAULTS = {
     automaticEnabled: true,

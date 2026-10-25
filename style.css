@@ -16,4 +16,4 @@
 .rpe-status { display: block; opacity: 0.8; margin-top: 0.7em; line-height: 1.4; }
 @media (max-width: 600px) {
     #rpe_category_list { grid-template-columns: 1fr; }
-}
+} 

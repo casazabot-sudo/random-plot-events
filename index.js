@@ -87,7 +87,6 @@
             categoryOptions += `<option value="${cat.id}" ${selected}>${cat.name}</option>`;
         });
 
-        // Удаляем старую панель, если она уже есть, чтобы не дублировать
         $("#rpe_main_container").remove();
 
         const html = `
@@ -131,7 +130,7 @@
 
                     <hr class="sys-hr">
                     <div style="display: flex; justify-content: center;">
-                        <button id="rpe_force_btn" class="menu_button ${s.forceNext ? 'forced' : ''}" style="${s.forceNext ? 'background-color: #c0392b !important;' : ''}">Вызвать событие в след. ответе</button>
+                        <button id="rpe_force_btn" class="menu_button" style="${s.forceNext ? 'background-color: #c0392b !important;' : ''}">Вызвать событие в след. ответе</button>
                     </div>
                     <div style="background: rgba(0, 0, 0, 0.2); padding: 8px; border-radius: 6px; font-size: 0.9em; text-align: center;">
                         <div id="rpe_status">${s.lastEventInfo}</div>
@@ -151,7 +150,7 @@
 
         $(document).off("change", "#rpe_enabled").on("change", "#rpe_enabled", function() { s.enabled = $(this).is(":checked"); });
         $(document).off("change", "#rpe_min").on("change", "#rpe_min", function() { s.minInterval = parseInt($(this).val()) || 20; });
-        $(document).off("change", "#rpe_max").on("change", "#rpe_max", function() { s.maxInterval = parseInt($(this).val()) || 30; });
+        $(document).off("change", "#rpe_max").on("change", "#rpe_max", function() { s.maxIntent = parseInt($(this).val()) || 30; s.maxInterval = parseInt($(this).val()) || 30; });
         $(document).off("change", "#rpe_intensity").on("change", "#rpe_intensity", function() { s.intensity = $(this).val(); });
         $(document).off("change", "#rpe_category_select").on("change", "#rpe_category_select", function() { s.selectedCategory = $(this).val(); });
         
@@ -166,49 +165,83 @@
         updateUIStatus(s);
     }
 
-    // Универсальный перехватчик отправки сообщения/генерации в ST
-    function registerHooks() {
+    // Главная логика проверки и внедрения инструкции
+    function handleMessageTrigger() {
         const s = getSettings();
+        if (!s.enabled) return;
 
-        // Проверяем наличие глобального eventSource и событий генерации
-        if (window.eventSource && window.event_types) {
-            // Перехватываем момент перед генерацией ответа ИИ
-            window.eventSource.on(window.event_types.CHAT_COMPLETION_PROMPT_READY, function (data) {
-                if (!s.enabled) return;
+        let triggerEvent = false;
 
-                let triggerEvent = false;
-
-                if (s.forceNext) {
-                    triggerEvent = true;
-                    s.forceNext = false;
-                    $("#rpe_force_btn").css("background-color", "");
-                } else {
-                    s.currentCount++;
-                    if (s.currentCount >= s.targetInterval) {
-                        triggerEvent = true;
-                        resetTargetInterval(s);
-                    }
-                }
-
-                updateUIStatus(s);
-
-                if (triggerEvent) {
-                    const category = selectCategory(s);
-                    const intensityDesc = INTENSITIES[s.intensity] || INTENSITIES.balanced;
-                    
-                    s.lastEventInfo = `Последнее событие: [${category.name}]`;
-                    updateUIStatus(s);
-
-                    const eventInstruction = `\n[СЮЖЕТНОЕ СОБЫТИЕ СИСТЕМЫ]\nВнезапно в текущую сцену вмешивается случайное событие.\nКатегория: "${category.name}" — ${category.desc}\nИнтенсивность: ${intensityDesc}\nПРАВИЛА:\n1. Строго соблюдай характеры персонажей, историю отношений и факты.\n2. ЗАПРЕЩЕНО управлять действиями персонажа пользователя.\n3. Опиши реакцию мира и дай игроку свободу действий.\n`;
-
-                    if (data && data.system_prompt) {
-                        data.system_prompt += "\n" + eventInstruction;
-                    } else if (data && Array.isArray(data.prompt)) {
-                        data.prompt.push({ role: "system", content: eventInstruction });
-                    }
-                }
-            });
+        if (s.forceNext) {
+            triggerEvent = true;
+            s.forceNext = false;
+            $("#rpe_force_btn").css("background-color", "");
+        } else {
+            s.currentCount++;
+            if (s.currentCount >= s.targetInterval) {
+                triggerEvent = true;
+                resetTargetInterval(s);
+            }
         }
+
+        updateUIStatus(s);
+
+        if (triggerEvent) {
+            const category = selectCategory(s);
+            const intensityDesc = INTENSITIES[s.intensity] || INTENSITIES.balanced;
+            
+            s.lastEventInfo = `Последнее событие: [${category.name}]`;
+            updateUIStatus(s);
+
+            const eventInstruction = `\n[СЮЖЕТНОЕ СОБЫТИЕ СИСТЕМЫ]\nВнезапно в текущую сцену вмешивается случайное событие.\nКатегория: "${category.name}" — ${category.desc}\nИнтенсивность: ${intensityDesc}\nПРАВИЛА:\n1. Строго соблюдай характеры персонажей, историю отношений и факты.\n2. ЗАПРЕЩЕНО управлять действиями персонажа пользователя.\n3. Опиши реакцию мира и дай игроку свободу действий.\n`;
+
+            // Сохраняем инструкцию во временное хранилище, чтобы внедрить её при генерации
+            window.rpe_pending_instruction = eventInstruction;
+        }
+    }
+
+    function registerHooks() {
+        // Перехватываем клик по кнопке отправки сообщения / генерации в ST (кнопка Send / Generate)
+        $(document).on("click", "#send_but, #option_generate, #generate_but", function() {
+            handleMessageTrigger();
+        });
+
+        // Также пробуем подписаться на стандартные события ST, если они доступны
+        if (window.eventSource && window.event_types) {
+            if (window.event_types.CHAT_COMPLETION_PROMPT_READY) {
+                window.eventSource.on(window.event_types.CHAT_COMPLETION_PROMPT_READY, function (data) {
+                    if (window.rpe_pending_instruction) {
+                        if (data && data.system_prompt) {
+                            data.system_prompt += "\n" + window.rpe_pending_instruction;
+                        } else if (data && Array.isArray(data.prompt)) {
+                            data.prompt.push({ role: "system", content: window.rpe_pending_instruction });
+                        }
+                        window.rpe_pending_instruction = null;
+                    }
+                });
+            }
+        }
+
+        // Запасной перехватчик отправки запросов через глобальный fetch для полной надежности
+        const originalFetch = window.fetch;
+        window.fetch = async function(...args) {
+            const url = args[0];
+            if (typeof url === 'string' && (url.includes('/api/v1/generate') || url.includes('/api/backends/'))) {
+                if (window.rpe_pending_instruction && args[1] && args[1].body) {
+                    try {
+                        let bodyData = JSON.parse(args[1].body);
+                        if (bodyData.system_prompt) {
+                            bodyData.system_prompt += "\n" + window.rpe_pending_instruction;
+                            args[1].body = JSON.stringify(bodyData);
+                        }
+                        window.rpe_pending_instruction = null;
+                    } catch (e) {
+                        console.error("RPE fetch intercept error:", e);
+                    }
+                }
+            }
+            return originalFetch.apply(this, args);
+        };
     }
 
     jQuery(async () => {

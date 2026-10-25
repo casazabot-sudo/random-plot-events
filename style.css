@@ -17,3 +17,15 @@
 @media (max-width: 600px) {
     #rpe_category_list { grid-template-columns: 1fr; }
 } 
+body::after {
+    content: "Random Plot Events: CSS загружен";
+    position: fixed;
+    bottom: 20px;
+    left: 10px;
+    z-index: 999999;
+    padding: 12px;
+    background: #176b36;
+    color: white;
+    border-radius: 8px;
+    font-size: 14px;
+}

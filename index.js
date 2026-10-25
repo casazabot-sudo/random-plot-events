@@ -372,3 +372,22 @@ if (document.readyState === 'loading') {
 } else {
     init();
 }
+try {
+    const rpeDiagnostic = document.createElement('div');
+    rpeDiagnostic.textContent =
+        'Random Plot Events: JavaScript выполняется';
+    rpeDiagnostic.style.cssText = [
+        'position:fixed',
+        'bottom:70px',
+        'left:10px',
+        'z-index:999999',
+        'padding:12px',
+        'background:#176b36',
+        'color:white',
+        'font-size:14px',
+        'border-radius:8px'
+    ].join(';');
+    document.body.appendChild(rpeDiagnostic);
+} catch (error) {
+    alert('Random Plot Events: ошибка индикатора — ' + error.message);
+}

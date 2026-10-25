@@ -6,7 +6,7 @@
         minInterval: 20,
         maxInterval: 30,
         intensity: "balanced",
-        selectedCategory: "random", // Новый параметр: random или конкретный id категории
+        selectedCategory: "random",
         currentCount: 0,
         targetInterval: 25,
         forceNext: false,
@@ -48,18 +48,16 @@
     }
 
     function resetTargetInterval(s) {
-        s.targetInterval = getRandomInt(s.minInterval, s.maxInterval);
+        s.targetInterval = getRandomInt(Number(s.minInterval) || 20, Number(s.maxInterval) || 30);
         s.currentCount = 0;
     }
 
     function selectCategory(s) {
-        // Если пользователь выбрал конкретную категорию в меню — используем её
         if (s.selectedCategory && s.selectedCategory !== "random") {
             const specific = CATEGORIES.find(c => c.id === s.selectedCategory);
             if (specific) return specific;
         }
 
-        // Иначе выбираем случайно с защитой от повторов последних 3
         let available = CATEGORIES.filter(cat => !s.recentCategories.includes(cat.id));
         if (available.length === 0) {
             available = CATEGORIES;
@@ -79,16 +77,21 @@
 
     function setupUI() {
         const s = getSettings();
+        if (!s.targetInterval) {
+            resetTargetInterval(s);
+        }
 
-        // Генерация опций для выпадающего списка категорий
         let categoryOptions = `<option value="random">🎲 Случайная категория (по умолчанию)</option>`;
         CATEGORIES.forEach(cat => {
             const selected = s.selectedCategory === cat.id ? "selected" : "";
             categoryOptions += `<option value="${cat.id}" ${selected}>${cat.name}</option>`;
         });
 
+        // Удаляем старую панель, если она уже есть, чтобы не дублировать
+        $("#rpe_main_container").remove();
+
         const html = `
-        <div class="inline-drawer">
+        <div id="rpe_main_container" class="inline-drawer">
             <div class="inline-drawer-toggle inline-drawer-header">
                 <b>Случайные сюжетные события</b>
                 <div class="inline-drawer-icon"><i class="fa-solid fa-chevron-down"></i></div>
@@ -128,7 +131,7 @@
 
                     <hr class="sys-hr">
                     <div style="display: flex; justify-content: center;">
-                        <button id="rpe_force_btn" class="menu_button">Вызвать событие в след. ответе</button>
+                        <button id="rpe_force_btn" class="menu_button ${s.forceNext ? 'forced' : ''}" style="${s.forceNext ? 'background-color: #c0392b !important;' : ''}">Вызвать событие в след. ответе</button>
                     </div>
                     <div style="background: rgba(0, 0, 0, 0.2); padding: 8px; border-radius: 6px; font-size: 0.9em; text-align: center;">
                         <div id="rpe_status">${s.lastEventInfo}</div>
@@ -163,14 +166,13 @@
         updateUIStatus(s);
     }
 
-    jQuery(async () => {
+    // Универсальный перехватчик отправки сообщения/генерации в ST
+    function registerHooks() {
         const s = getSettings();
-        if (!s.targetInterval) {
-            resetTargetInterval(s);
-        }
-        setupUI();
 
+        // Проверяем наличие глобального eventSource и событий генерации
         if (window.eventSource && window.event_types) {
+            // Перехватываем момент перед генерацией ответа ИИ
             window.eventSource.on(window.event_types.CHAT_COMPLETION_PROMPT_READY, function (data) {
                 if (!s.enabled) return;
 
@@ -187,6 +189,8 @@
                         resetTargetInterval(s);
                     }
                 }
+
+                updateUIStatus(s);
 
                 if (triggerEvent) {
                     const category = selectCategory(s);
@@ -205,5 +209,10 @@
                 }
             });
         }
+    }
+
+    jQuery(async () => {
+        setupUI();
+        registerHooks();
     });
 })();

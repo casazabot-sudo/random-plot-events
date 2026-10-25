@@ -1,10 +1,23 @@
 import { extension_settings, saveSettingsDebounced } from '../../../extensions.js';
 
 
-document.body.insertAdjacentHTML(
-    'beforeend',
-    '<div style="position:fixed;bottom:70px;left:10px;z-index:999999;background:#176b36;color:white;padding:12px;border-radius:8px">Random Plot Events: файл запущен</div>'
-);
+
+function showRpeDiagnostic() {
+    const label = document.createElement('div');
+    label.textContent = 'Random Plot Events: файл запущен';
+    label.style.cssText =
+        'position:fixed;bottom:70px;left:10px;z-index:999999;' +
+        'background:#176b36;color:white;padding:12px;border-radius:8px';
+
+    (document.body || document.documentElement).appendChild(label);
+}
+
+if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', showRpeDiagnostic, { once: true });
+} else {
+    showRpeDiagnostic();
+}
+
 
 const KEY = 'random_plot_events';
 const DEFAULTS = {

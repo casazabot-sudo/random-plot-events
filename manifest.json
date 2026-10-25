@@ -3,7 +3,7 @@
   "loading_order": 10,
   "js": "index.js",
   "css": "style.css",
-  "author": "casazabot",
+  "author": "Casazabot",
   "version": "2.0.0",
   "homePage": "https://github.com/casazabot-sudo/random-plot-events",
   "auto_update": true,

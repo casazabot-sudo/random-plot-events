@@ -1,6 +1,6 @@
 {
   "display_name": "Random Plot Event",
-  "name": "random_plot_events",
+  "name": "random-plot-events",
   "version": "1.0.1",
   "author": "AI Collaborator",
   "description": "Генерирует случайные сюжетные события по категориям с настраиваемой интенсивностью.",

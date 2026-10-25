@@ -3,9 +3,12 @@
   "loading_order": 10,
   "js": "index.js",
   "css": "style.css",
-  "author": "casazabot",
-  "version": "2.0.0",
+  "author": "Community extension",
+  "version": "2.0.1",
   "homePage": "https://github.com/casazabot-sudo/random-plot-events",
   "auto_update": true,
-  "generate_interceptor": "randomPlotEventsInterceptor"
+  "generate_interceptor": "randomPlotEventsInterceptor",
+  "hooks": {
+    "activate": "init"
+  }
 }

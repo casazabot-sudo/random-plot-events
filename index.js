@@ -161,19 +161,44 @@ function handleMessageTrigger() {
     }
 }
 
-// SillyTavern calls this global function before building the generation context.
+
+/*
+ * SillyTavern calls this global function before building the generation prompt.
+ * Insert the queued event directly into the chat array so it becomes part of
+ * the actual generation context.
+ */
 export async function randomPlotEventsInterceptor(chat, contextSize, abort, type) {
     try {
         if (!pendingInstruction) return;
+
+        if (!Array.isArray(chat)) {
+            console.warn(
+                '[Random Plot Events] No chat array received; event remains queued.'
+            );
+            return;
+        }
+
         const instruction = pendingInstruction;
+        const insertAt = Math.max(0, chat.length - 1);
+
+        chat.splice(insertAt, 0, {
+            is_user: false,
+            name: 'Random Plot Events',
+            send_date: Date.now(),
+            mes: instruction.trim(),
+        });
+
         pendingInstruction = null;
 
-        setExtensionPrompt(TAG, instruction, extension_prompt_types.IN_PROMPT, 1, false, extension_prompt_roles.SYSTEM);
-        console.info('[Random Plot Events] Instruction injected into generation.');
+        console.info(
+            '[Random Plot Events] Event instruction inserted into chat context.',
+            { type, contextSize, chatLength: chat.length }
+        );
     } catch (error) {
         console.error('[Random Plot Events] Interceptor failed:', error);
     }
 }
+
 
 function buildUI() {
     if (!window.jQuery) return false;

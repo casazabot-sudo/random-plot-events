@@ -217,9 +217,11 @@ function updateUI() {
 }
 
 function buildUI() {
-    if (document.getElementById('random_plot_events_panel')) return;
-    const target = document.querySelector('#extensions_settings2') || document.querySelector('#extensions_settings');
-    if (!target) return;
+    if (document.getElementById('random_plot_events_panel')) return true;
+    // SillyTavern may load third-party extension scripts before the settings
+    // container exists. Retry on later DOM mutations instead of silently exiting.
+    const target = document.querySelector('#extensions_settings2, #extensions_settings');
+    if (!target) return false;
 
     const panel = document.createElement('div');
     panel.id = 'random_plot_events_panel';
@@ -326,18 +328,43 @@ function buildUI() {
         }
     });
     updateUI();
+    return true;
 }
 
-function init() {
+let uiObserver = null;
+let initialized = false;
+
+export function init() {
     getSettings();
-    buildUI();
-    const ctx = getContext();
-    if (ctx.eventSource && ctx.event_types?.APP_READY) {
-        ctx.eventSource.on(ctx.event_types.APP_READY, buildUI);
+    // Try immediately, then watch for the settings panel to be created. This is
+    // important on slower/mobile browsers where extension JS can run early.
+    if (!buildUI() && !uiObserver && document.body) {
+        uiObserver = new MutationObserver(() => {
+            if (buildUI()) {
+                uiObserver.disconnect();
+                uiObserver = null;
+            }
+        });
+        uiObserver.observe(document.body, { childList: true, subtree: true });
     }
-    if (ctx.eventSource && ctx.event_types?.CHAT_CHANGED) {
+    const ctx = getContext();
+    if (!initialized && ctx.eventSource && ctx.event_types?.APP_READY) {
+        ctx.eventSource.on(ctx.event_types.APP_READY, () => {
+            if (!buildUI() && !uiObserver && document.body) {
+                uiObserver = new MutationObserver(() => {
+                    if (buildUI()) {
+                        uiObserver.disconnect();
+                        uiObserver = null;
+                    }
+                });
+                uiObserver.observe(document.body, { childList: true, subtree: true });
+            }
+        });
+    }
+    if (!initialized && ctx.eventSource && ctx.event_types?.CHAT_CHANGED) {
         ctx.eventSource.on(ctx.event_types.CHAT_CHANGED, () => setTimeout(updateUI, 100));
     }
+    initialized = true;
 }
 
 if (document.readyState === 'loading') {

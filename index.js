@@ -1,108 +1,357 @@
-import { extension_settings, saveSettingsDebounced, getContext } from '../../../extensions.js';
-import { eventSource, event_types, extension_prompt_types, extension_prompt_roles, setExtensionPrompt } from '../../../script.js';
+import { extension_settings } from '../../../extensions.js';
+import {
+    saveSettingsDebounced,
+    eventSource,
+    event_types,
+    extension_prompt_types,
+    extension_prompt_roles,
+    setExtensionPrompt
+} from '../../../../script.js';
 
 const KEY = 'random-plot-events';
 const TAG = 'random-plot-events-event';
-const DEFAULTS = { enabled: true, minInterval: 20, maxInterval: 30, intensity: 'balanced', selectedCategory: 'random', repeatAvoidance: true, messagesSinceEvent: 0, targetInterval: 0, forceNext: false, recentCategories: [], lastEventInfo: 'Событий пока не было', _lastCountedUserMessages: 0 };
-const CATEGORIES = {
-  mystery: ['Тайна / загадка', 'Introduce a mystery, unexplained clue, secret, or contradiction that fits the story. Do not solve it immediately.'],
-  complication: ['Осложнение', 'Introduce a plausible complication that changes the situation and requires adaptation or a difficult choice.'],
-  encounter: ['Встреча', 'Introduce a character or unexpected reunion with a clear reason to enter the scene.'],
-  danger: ['Опасность', 'Introduce a proportionate, story-relevant danger. Build tension fairly without forcing an unavoidable outcome.'],
-  social: ['Социальный конфликт', 'Introduce social tension, a misunderstanding, rivalry, negotiation, or clash of interests.'],
-  clue: ['Подсказка', 'Reveal a small but significant clue connected to an existing plot thread without revealing everything.'],
-  opportunity: ['Возможность', 'Present a useful opportunity, invitation, resource, bargain, or opening the characters can accept or reject.'],
-  environment: ['Окружение', 'Change the environment in a noticeable, story-relevant way: weather, a location detail, public event, or technical failure.'],
-  consequence: ['Последствие', 'Bring forward a believable consequence of an earlier action, promise, choice, or unresolved conflict.'],
-  romance: ['Отношения', 'Introduce a subtle relationship beat appropriate to established dynamics. Do not assume the player character’s feelings or consent.']
+
+const DEFAULTS = {
+    enabled: true,
+    minInterval: 20,
+    maxInterval: 30,
+    intensity: 'balanced',
+    selectedCategory: 'random',
+    repeatAvoidance: true,
+    messagesSinceEvent: 0,
+    targetInterval: 25,
+    forceNext: false,
+    recentCategories: [],
+    lastEventInfo: 'No events yet',
+    _lastCountedUserMessages: 0
 };
+
+const CATEGORIES = {
+    mystery: ['Mystery', 'Introduce a mystery, unexplained clue, secret, or contradiction. Do not reveal the answer immediately.'],
+    complication: ['Complication', 'Introduce a plausible complication that changes the situation and requires adaptation or a difficult choice.'],
+    encounter: ['Encounter', 'Introduce a new character or an unexpected reunion with an established character, with a clear reason for their appearance.'],
+    danger: ['Danger', 'Introduce a relevant threat, trap, or source of tension. Do not make the outcome inevitable.'],
+    social: ['Social Conflict', 'Introduce social tension, a misunderstanding, rivalry, negotiation, or clash of interests.'],
+    clue: ['Clue', 'Reveal a small but meaningful clue connected to an existing plot thread.'],
+    opportunity: ['Opportunity', 'Present a useful opportunity, invitation, resource, bargain, or unexpected advantage.'],
+    environment: ['Environment', 'Change the surroundings: weather, location details, nearby activity, or a technical failure.'],
+    consequence: ['Consequence', 'Show a plausible consequence of an earlier action, promise, choice, or unresolved conflict.'],
+    romance: ['Relationship', 'Introduce a subtle emotional moment that fits the established relationship. Do not impose feelings or consent on the user’s character.']
+};
+
+const INTENSITIES = {
+    subtle: 'Subtle event: a small detail that adds flavor to the scene with minimal disruption.',
+    balanced: 'Balanced event: a noticeable plot development that calls for a character response.',
+    dramatic: 'Dramatic event: a serious incident that creates strong tension while remaining consistent with the story.'
+};
+
 let initialized = false;
+let pendingInstruction = null;
 
-function int(v, min, max, fallback) { const n = Number.parseInt(v, 10); return Number.isFinite(n) ? Math.max(min, Math.min(max, n)) : fallback; }
+function int(value, min, max, fallback) {
+    const n = Number.parseInt(value, 10);
+    return Number.isFinite(n) ? Math.max(min, Math.min(max, n)) : fallback;
+}
+
 function settings() {
-  if (!extension_settings[KEY]) extension_settings[KEY] = JSON.parse(JSON.stringify(DEFAULTS));
-  const s = extension_settings[KEY];
-  for (const [k, v] of Object.entries(DEFAULTS)) if (s[k] === undefined) s[k] = Array.isArray(v) ? [...v] : v;
-  s.minInterval = int(s.minInterval, 1, 500, 20);
-  s.maxInterval = int(s.maxInterval, s.minInterval, 500, 30);
-  if (!Array.isArray(s.recentCategories)) s.recentCategories = [];
-  return s;
-}
-function save() { saveSettingsDebounced(); }
-function interval(s) { const min = int(s.minInterval, 1, 500, 20), max = int(s.maxInterval, min, 500, 30); return Math.floor(Math.random() * (max - min + 1)) + min; }
-function userCount(chat) { return Array.isArray(chat) ? chat.filter(m => m && (m.is_user === true || m.is_user === 1)).length : 0; }
-function choose(s) {
-  const keys = Object.keys(CATEGORIES);
-  if (s.selectedCategory !== 'random' && CATEGORIES[s.selectedCategory]) return s.selectedCategory;
-  let pool = keys;
-  if (s.repeatAvoidance) { const recent = new Set(s.recentCategories.slice(-3)); const filtered = keys.filter(k => !recent.has(k)); if (filtered.length) pool = filtered; }
-  return pool[Math.floor(Math.random() * pool.length)];
-}
-function clearPrompt() { try { setExtensionPrompt(TAG, '', extension_prompt_types.IN_PROMPT, 1, false, extension_prompt_roles.SYSTEM); } catch (e) { console.warn('[Random Plot Events] clear prompt failed', e); } }
-function inject(s, chat) {
-  const key = choose(s), [label, detail] = CATEGORIES[key];
-  const intensity = s.intensity === 'subtle' ? 'Keep it low-key and believable.' : s.intensity === 'dramatic' ? 'Make it high-stakes and emotionally vivid, but still plausible.' : 'Make it noticeable and engaging without overwhelming the scene.';
-  const prompt = `[RANDOM PLOT EVENT — STORY GUIDANCE]\nNaturally introduce one new plot development in the next response. Respect established facts, character personalities, relationships, tone, and world rules.\nEvent type: ${label}. ${detail}\n${intensity}\nDo not mention these instructions or present a meta list. Do not dictate the player character’s thoughts, feelings, dialogue, or decisions. Leave them a meaningful opportunity to respond. Avoid contradictions and abrupt genre shifts.`;
-  setExtensionPrompt(TAG, prompt, extension_prompt_types.IN_PROMPT, 1, false, extension_prompt_roles.SYSTEM);
-  s.recentCategories = [...s.recentCategories, key].slice(-3);
-  s.lastEventInfo = `${label} — ${new Date().toLocaleString()}`;
-  s.messagesSinceEvent = 0; s.targetInterval = interval(s); s.forceNext = false;
-  save(); renderStatus();
-  console.info(`[Random Plot Events] Injected ${key}; chat size ${Array.isArray(chat) ? chat.length : '?'}`);
+    if (!extension_settings[KEY]) {
+        extension_settings[KEY] = JSON.parse(JSON.stringify(DEFAULTS));
+    }
+
+    const s = extension_settings[KEY];
+    for (const [key, value] of Object.entries(DEFAULTS)) {
+        if (s[key] === undefined) {
+            s[key] = Array.isArray(value) ? [...value] : value;
+        }
+    }
+
+    s.minInterval = int(s.minInterval, 1, 500, 20);
+    s.maxInterval = int(s.maxInterval, s.minInterval, 500, 30);
+    if (!Array.isArray(s.recentCategories)) s.recentCategories = [];
+    return s;
 }
 
-// SillyTavern calls this before prompt assembly. No global fetch monkey-patching.
-export function randomPlotEventsInterceptor(chat) {
-  try {
-    const s = settings(); if (!s.enabled || !Array.isArray(chat)) return;
-    const count = userCount(chat), prev = int(s._lastCountedUserMessages, 0, 100000000, 0);
-    if (count > prev) { s.messagesSinceEvent += count - prev; s._lastCountedUserMessages = count; }
-    if (!s.targetInterval) s.targetInterval = interval(s);
-    if (s.forceNext || s.messagesSinceEvent >= s.targetInterval) inject(s, chat);
-    else save();
-  } catch (e) { console.error('[Random Plot Events] interceptor failed', e); }
+function save() {
+    saveSettingsDebounced();
+}
+
+function randomInterval(s) {
+    return Math.floor(Math.random() * (s.maxInterval - s.minInterval + 1)) + s.minInterval;
+}
+
+function chooseCategory(s) {
+    if (s.selectedCategory !== 'random' && CATEGORIES[s.selectedCategory]) {
+        return s.selectedCategory;
+    }
+
+    let keys = Object.keys(CATEGORIES);
+    if (s.repeatAvoidance) {
+        const recent = new Set(s.recentCategories.slice(-3));
+        const filtered = keys.filter(key => !recent.has(key));
+        if (filtered.length) keys = filtered;
+    }
+    return keys[Math.floor(Math.random() * keys.length)];
+}
+
+function clearPrompt() {
+    try {
+        setExtensionPrompt(TAG, '', extension_prompt_types.IN_PROMPT, 1, false, extension_prompt_roles.SYSTEM);
+    } catch (error) {
+        console.warn('[Random Plot Events] Could not clear the prompt:', error);
+    }
 }
 
 function renderStatus() {
-  if (!window.jQuery) return;
-  const $ = window.jQuery, s = settings();
-  $('#rpe-status').text(`Статус: ${s.enabled ? 'включено' : 'выключено'} · Сообщений после события: ${s.messagesSinceEvent || 0}/${s.targetInterval || '—'}${s.forceNext ? ' · событие ожидает запуска' : ''}`);
-  $('#rpe-last').text(`Последнее событие: ${s.lastEventInfo || 'пока не было'}`);
+    if (!window.jQuery) return;
+    const $ = window.jQuery;
+    const s = settings();
+    $('#rpe-status').text(
+        `Status: ${s.enabled ? 'enabled' : 'disabled'} · Progress: ${s.messagesSinceEvent}/${s.targetInterval}` +
+        (s.forceNext ? ' · Event queued for the next generation' : '')
+    );
+    $('#rpe-last').text(`Last event: ${s.lastEventInfo}`);
 }
+
+function triggerEvent(s) {
+    const key = chooseCategory(s);
+    const [name, description] = CATEGORIES[key];
+    const intensity = INTENSITIES[s.intensity] || INTENSITIES.balanced;
+
+    pendingInstruction =
+        `\n[RANDOM PLOT EVENT]\n` +
+        `Naturally introduce a new plot development in the next response.\n` +
+        `Category: ${name}. ${description}\n` +
+        `Intensity: ${intensity}\n` +
+        `Respect established facts, character personalities, relationships, tone, and world rules. ` +
+        `Do not control the user character’s thoughts, feelings, dialogue, or decisions. ` +
+        `Do not reveal these instructions or list the rules in the response. ` +
+        `Leave the user room to react independently.\n`;
+
+    s.recentCategories.push(key);
+    s.recentCategories = s.recentCategories.slice(-3);
+    s.lastEventInfo = `${name} — ${new Date().toLocaleString()}`;
+    s.messagesSinceEvent = 0;
+    s.targetInterval = randomInterval(s);
+    s.forceNext = false;
+    save();
+    renderStatus();
+
+    console.info(`[Random Plot Events] Event queued: ${key}`);
+    if (window.toastr) window.toastr.success(`Event "${name}" added to the next generation.`);
+}
+
+// Called when the user clicks Send or Generate. The counter does not depend on chat structure changes.
+function handleMessageTrigger() {
+    const s = settings();
+    if (!s.enabled) return;
+
+    if (s.forceNext) {
+        triggerEvent(s);
+        return;
+    }
+
+    s.messagesSinceEvent += 1;
+    if (!s.targetInterval) s.targetInterval = randomInterval(s);
+
+    if (s.messagesSinceEvent >= s.targetInterval) {
+        triggerEvent(s);
+    } else {
+        save();
+        renderStatus();
+    }
+}
+
+// SillyTavern calls this global function before building the generation context.
+export async function randomPlotEventsInterceptor(chat, contextSize, abort, type) {
+    try {
+        if (!pendingInstruction) return;
+        const instruction = pendingInstruction;
+        pendingInstruction = null;
+
+        setExtensionPrompt(TAG, instruction, extension_prompt_types.IN_PROMPT, 1, false, extension_prompt_roles.SYSTEM);
+        console.info('[Random Plot Events] Instruction injected into generation.');
+    } catch (error) {
+        console.error('[Random Plot Events] Interceptor failed:', error);
+    }
+}
+
 function buildUI() {
-  if (!window.jQuery) return false;
-  const $ = window.jQuery, host = $('#extensions_settings, #extensions_settings2').first();
-  if (!host.length) return false;
-  if ($('#rpe-fixed-settings').length) return true;
-  const categoryOptions = Object.entries(CATEGORIES).map(([k, v]) => `<option value="${k}">${v[0]}</option>`).join('');
-  host.append(`<div id="rpe-fixed-settings" class="rpe-panel"><div class="inline-drawer"><div class="inline-drawer-toggle inline-drawer-header"><b>Random Plot Events (Fixed)</b><div class="inline-drawer-icon fa-solid fa-circle-chevron-down down"></div></div><div class="inline-drawer-content">
-    <label class="checkbox_label"><input id="rpe-enabled" type="checkbox"><span>Автоматически добавлять сюжетные события</span></label>
-    <div class="rpe-row"><label for="rpe-min">Минимальный интервал сообщений</label><input id="rpe-min" type="number" min="1" max="500" class="text_pole rpe-number"></div>
-    <div class="rpe-row"><label for="rpe-max">Максимальный интервал сообщений</label><input id="rpe-max" type="number" min="1" max="500" class="text_pole rpe-number"></div>
-    <div class="rpe-row"><label for="rpe-intensity">Интенсивность</label><select id="rpe-intensity" class="text_pole"><option value="subtle">Ненавязчивая</option><option value="balanced">Сбалансированная</option><option value="dramatic">Драматичная</option></select></div>
-    <div class="rpe-row"><label for="rpe-category">Категория события</label><select id="rpe-category" class="text_pole"><option value="random">Случайная</option>${categoryOptions}</select></div>
-    <label class="checkbox_label"><input id="rpe-repeat" type="checkbox"><span>Избегать повторения последних 3 категорий</span></label>
-    <div class="rpe-row"><button id="rpe-force" class="menu_button">Запустить событие в следующем ответе</button><button id="rpe-reset" class="menu_button">Сбросить счётчик</button></div>
-    <div id="rpe-status" class="rpe-status"></div><div id="rpe-last" class="rpe-status"></div><small>Событие добавляется в контекст следующей генерации. Глобальный fetch не переопределяется.</small>
-  </div></div></div>`);
-  const s = settings(); $('#rpe-enabled').prop('checked', !!s.enabled); $('#rpe-min').val(s.minInterval); $('#rpe-max').val(s.maxInterval); $('#rpe-intensity').val(s.intensity); $('#rpe-category').val(s.selectedCategory); $('#rpe-repeat').prop('checked', !!s.repeatAvoidance); renderStatus();
-  $(document).off('.rpeFixed');
-  $(document).on('change.rpeFixed', '#rpe-enabled', function () { settings().enabled = $(this).prop('checked'); save(); renderStatus(); });
-  $(document).on('change.rpeFixed', '#rpe-min', function () { const x = settings(); x.minInterval = int($(this).val(), 1, 500, 20); if (x.maxInterval < x.minInterval) x.maxInterval = x.minInterval; x.targetInterval = interval(x); $('#rpe-min').val(x.minInterval); $('#rpe-max').val(x.maxInterval); save(); renderStatus(); });
-  $(document).on('change.rpeFixed', '#rpe-max', function () { const x = settings(); x.maxInterval = int($(this).val(), x.minInterval, 500, 30); x.targetInterval = interval(x); $('#rpe-max').val(x.maxInterval); save(); renderStatus(); });
-  $(document).on('change.rpeFixed', '#rpe-intensity', function () { settings().intensity = String($(this).val()); save(); });
-  $(document).on('change.rpeFixed', '#rpe-category', function () { settings().selectedCategory = String($(this).val()); save(); });
-  $(document).on('change.rpeFixed', '#rpe-repeat', function () { settings().repeatAvoidance = $(this).prop('checked'); save(); });
-  $(document).on('click.rpeFixed', '#rpe-force', function () { settings().forceNext = true; save(); renderStatus(); if (window.toastr) toastr.info('Событие будет добавлено в следующую генерацию.'); });
-  $(document).on('click.rpeFixed', '#rpe-reset', function () { const x = settings(); x.messagesSinceEvent = 0; x._lastCountedUserMessages = userCount(getContext()?.chat); x.targetInterval = interval(x); x.forceNext = false; clearPrompt(); save(); renderStatus(); });
-  return true;
+    if (!window.jQuery) return false;
+    const $ = window.jQuery;
+    const host = $('#extensions_settings, #extensions_settings2').first();
+    if (!host.length) return false;
+    if ($('#rpe-fixed-settings').length) return true;
+
+    const s = settings();
+    const categoryOptions = Object.entries(CATEGORIES)
+        .map(([key, value]) => `<option value="${key}">${value[0]}</option>`)
+        .join('');
+
+    host.append(`
+      <div id="rpe-fixed-settings" class="rpe-panel">
+        <div class="inline-drawer">
+          <div class="inline-drawer-toggle inline-drawer-header">
+            <b>Random Plot Events</b>
+            <div class="inline-drawer-icon fa-solid fa-circle-chevron-down down"></div>
+          </div>
+          <div class="inline-drawer-content">
+            <label class="checkbox_label">
+              <input id="rpe-enabled" type="checkbox">
+              <span>Enable random plot events</span>
+            </label>
+            <div class="rpe-row">
+              <label for="rpe-min">Minimum interval</label>
+              <input id="rpe-min" type="number" min="1" max="500" class="text_pole rpe-number">
+            </div>
+            <div class="rpe-row">
+              <label for="rpe-max">Maximum interval</label>
+              <input id="rpe-max" type="number" min="1" max="500" class="text_pole rpe-number">
+            </div>
+            <div class="rpe-row">
+              <label for="rpe-intensity">Event intensity</label>
+              <select id="rpe-intensity" class="text_pole">
+                <option value="subtle">Subtle</option>
+                <option value="balanced">Balanced</option>
+                <option value="dramatic">Dramatic</option>
+              </select>
+            </div>
+            <div class="rpe-row">
+              <label for="rpe-category">Event category</label>
+              <select id="rpe-category" class="text_pole">
+                <option value="random">Random</option>
+                ${categoryOptions}
+              </select>
+            </div>
+            <label class="checkbox_label">
+              <input id="rpe-repeat" type="checkbox">
+              <span>Avoid the last 3 event categories</span>
+            </label>
+            <div class="rpe-row">
+              <button id="rpe-force" class="menu_button">Trigger an event in the next response</button>
+              <button id="rpe-reset" class="menu_button">Reset counter</button>
+            </div>
+            <div id="rpe-status" class="rpe-status"></div>
+            <div id="rpe-last" class="rpe-status"></div>
+          </div>
+        </div>
+      </div>
+    `);
+
+    $('#rpe-enabled').prop('checked', !!s.enabled);
+    $('#rpe-min').val(s.minInterval);
+    $('#rpe-max').val(s.maxInterval);
+    $('#rpe-intensity').val(s.intensity);
+    $('#rpe-category').val(s.selectedCategory);
+    $('#rpe-repeat').prop('checked', !!s.repeatAvoidance);
+
+    $(document).off('.rpeFixed');
+    $(document).on('change.rpeFixed', '#rpe-enabled', function () {
+        settings().enabled = $(this).prop('checked');
+        save();
+        renderStatus();
+    });
+    $(document).on('change.rpeFixed', '#rpe-min', function () {
+        const x = settings();
+        x.minInterval = int($(this).val(), 1, 500, 20);
+        if (x.maxInterval < x.minInterval) x.maxInterval = x.minInterval;
+        x.targetInterval = randomInterval(x);
+        $('#rpe-min').val(x.minInterval);
+        $('#rpe-max').val(x.maxInterval);
+        save();
+        renderStatus();
+    });
+    $(document).on('change.rpeFixed', '#rpe-max', function () {
+        const x = settings();
+        x.maxInterval = int($(this).val(), x.minInterval, 500, 30);
+        x.targetInterval = randomInterval(x);
+        $('#rpe-max').val(x.maxInterval);
+        $('#rpe-min').val(x.minInterval);
+        save();
+        renderStatus();
+    });
+    $(document).on('change.rpeFixed', '#rpe-intensity', function () {
+        settings().intensity = String($(this).val());
+        save();
+    });
+    $(document).on('change.rpeFixed', '#rpe-category', function () {
+        settings().selectedCategory = String($(this).val());
+        save();
+    });
+    $(document).on('change.rpeFixed', '#rpe-repeat', function () {
+        settings().repeatAvoidance = $(this).prop('checked');
+        save();
+    });
+    $(document).on('click.rpeFixed', '#rpe-force', function (event) {
+        event.preventDefault();
+        const x = settings();
+        x.forceNext = true;
+        save();
+        renderStatus();
+        if (window.toastr) window.toastr.info('An event will be added to the next generation.');
+    });
+    $(document).on('click.rpeFixed', '#rpe-reset', function (event) {
+        event.preventDefault();
+        const x = settings();
+        x.messagesSinceEvent = 0;
+        x.targetInterval = randomInterval(x);
+        x.forceNext = false;
+        pendingInstruction = null;
+        clearPrompt();
+        save();
+        renderStatus();
+    });
+
+    renderStatus();
+    return true;
 }
 
 export function init() {
-  if (initialized) return; initialized = true;
-  const s = settings(); if (!s.targetInterval) s.targetInterval = interval(s);
-  if (!buildUI() && document.body) { const obs = new MutationObserver(() => { if (buildUI()) obs.disconnect(); }); obs.observe(document.body, { childList: true, subtree: true }); setTimeout(() => obs.disconnect(), 30000); }
-  if (eventSource && event_types?.GENERATION_ENDED) eventSource.on(event_types.GENERATION_ENDED, () => { clearPrompt(); renderStatus(); });
-  if (eventSource && event_types?.CHAT_CHANGED) eventSource.on(event_types.CHAT_CHANGED, () => { const x = settings(); x._lastCountedUserMessages = userCount(getContext()?.chat); x.messagesSinceEvent = 0; x.targetInterval = interval(x); x.forceNext = false; clearPrompt(); save(); renderStatus(); });
-  console.info('[Random Plot Events] Initialized');
+    if (initialized) return;
+    initialized = true;
+
+    const s = settings();
+    if (!s.targetInterval) s.targetInterval = randomInterval(s);
+
+    if (!buildUI() && document.body) {
+        const observer = new MutationObserver(() => {
+            if (buildUI()) observer.disconnect();
+        });
+        observer.observe(document.body, { childList: true, subtree: true });
+        setTimeout(() => observer.disconnect(), 30000);
+    }
+
+    // Delegated handlers also work if SillyTavern recreates the buttons.
+    if (window.jQuery) {
+        const $ = window.jQuery;
+        $(document).off('click.rpeTrigger', '#send_but, #option_generate, #generate_but');
+        $(document).on(
+            'click.rpeTrigger',
+            '#send_but, #option_generate, #generate_but',
+            () => handleMessageTrigger()
+        );
+    }
+
+    if (eventSource && event_types?.GENERATION_ENDED) {
+        eventSource.on(event_types.GENERATION_ENDED, () => {
+            clearPrompt();
+            renderStatus();
+        });
+    }
+
+    if (eventSource && event_types?.CHAT_CHANGED) {
+        eventSource.on(event_types.CHAT_CHANGED, () => {
+            const x = settings();
+            x.messagesSinceEvent = 0;
+            x.targetInterval = randomInterval(x);
+            x.forceNext = false;
+            pendingInstruction = null;
+            clearPrompt();
+            save();
+            renderStatus();
+        });
+    }
+
+    console.info('[Random Plot Events] Initialized');
 }
+
+globalThis.randomPlotEventsInterceptor = randomPlotEventsInterceptor;
